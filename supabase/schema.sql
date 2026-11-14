@@ -1,0 +1,326 @@
+-- Rigel Voice schema. Run this once in the Supabase SQL editor.
+create extension if not exists pgcrypto;
+
+-- ---------- Organisations and users ----------
+create table public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  join_code text not null unique default encode(gen_random_bytes(6), 'hex'),
+  created_at timestamptz not null default now()
+);
+
+create table public.profiles (
+  id uuid primary key references auth.users on delete cascade,
+  org_id uuid not null references public.organizations on delete cascade,
+  full_name text,
+  email text,
+  role text not null default 'agent' check (role in ('owner', 'manager', 'agent')),
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.current_org_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select org_id from public.profiles where id = auth.uid()
+$$;
+
+create or replace function public.is_manager() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role in ('owner', 'manager'))
+$$;
+
+-- ---------- Scorecard templates ----------
+create table public.scorecard_templates (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null default public.current_org_id() references public.organizations on delete cascade,
+  name text not null,
+  description text,
+  -- [{ "id": "greeting", "name": "...", "description": "...", "max_points": 10 }]
+  criteria jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- ---------- Campaigns and contacts ----------
+create table public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null default public.current_org_id() references public.organizations on delete cascade,
+  name text not null,
+  mode text not null default 'agent' check (mode in ('agent', 'broadcast')),
+  status text not null default 'draft' check (status in ('draft', 'active', 'paused', 'completed')),
+  caller_id text,
+  script text,
+  voicemail_message text,
+  broadcast_message text,
+  tts_voice text not null default 'Polly.Amy-Neural',
+  max_attempts int not null default 3,
+  retry_minutes int not null default 240,
+  record_calls boolean not null default true,
+  default_country text not null default 'IE',
+  scorecard_template_id uuid references public.scorecard_templates on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table public.contacts (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null default public.current_org_id() references public.organizations on delete cascade,
+  campaign_id uuid not null references public.campaigns on delete cascade,
+  first_name text,
+  last_name text,
+  company text,
+  phone text not null,
+  email text,
+  notes text,
+  status text not null default 'pending'
+    check (status in ('pending', 'in_progress', 'retry', 'completed', 'dnc', 'failed')),
+  attempts int not null default 0,
+  last_disposition text,
+  assigned_to uuid references public.profiles on delete set null,
+  last_attempt_at timestamptz,
+  next_attempt_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, phone)
+);
+create index contacts_queue_idx on public.contacts (campaign_id, status, next_attempt_at);
+
+create table public.dnc_numbers (
+  org_id uuid not null default public.current_org_id() references public.organizations on delete cascade,
+  phone text not null,
+  reason text,
+  created_at timestamptz not null default now(),
+  primary key (org_id, phone)
+);
+
+-- ---------- Calls, transcripts, scorecards ----------
+create table public.calls (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null default public.current_org_id() references public.organizations on delete cascade,
+  campaign_id uuid references public.campaigns on delete set null,
+  contact_id uuid references public.contacts on delete set null,
+  agent_id uuid references public.profiles on delete set null,
+  kind text not null default 'agent' check (kind in ('agent', 'broadcast')),
+  to_number text not null,
+  from_number text,
+  twilio_call_sid text,
+  twilio_child_sid text,
+  status text not null default 'initiated',
+  answered_by text,
+  duration_seconds int,
+  recording_sid text,
+  recording_url text,
+  recording_duration int,
+  disposition text,
+  notes text,
+  processing_status text not null default 'none'
+    check (processing_status in ('none', 'pending', 'transcribing', 'scoring', 'done', 'skipped', 'failed')),
+  processing_error text,
+  started_at timestamptz,
+  ended_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index calls_org_created_idx on public.calls (org_id, created_at desc);
+create index calls_campaign_idx on public.calls (campaign_id);
+
+create table public.transcripts (
+  call_id uuid primary key references public.calls on delete cascade,
+  org_id uuid not null references public.organizations on delete cascade,
+  text text not null,
+  -- [{ "speaker": "Agent" | "Customer", "start": 1.2, "end": 3.4, "text": "..." }]
+  utterances jsonb not null default '[]'::jsonb,
+  provider text,
+  created_at timestamptz not null default now()
+);
+
+create table public.scorecards (
+  id uuid primary key default gen_random_uuid(),
+  call_id uuid not null unique references public.calls on delete cascade,
+  org_id uuid not null references public.organizations on delete cascade,
+  template_id uuid references public.scorecard_templates on delete set null,
+  total_score numeric not null default 0,
+  max_score numeric not null default 0,
+  percent numeric not null default 0,
+  summary text,
+  sentiment text,
+  -- [{ "criterion_id", "name", "score", "max_points", "evidence", "comment" }]
+  results jsonb not null default '[]'::jsonb,
+  coaching jsonb not null default '[]'::jsonb,
+  compliance_flags jsonb not null default '[]'::jsonb,
+  model text,
+  created_at timestamptz not null default now()
+);
+
+-- ---------- New user signup: create or join an organisation ----------
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  v_org uuid;
+  v_role text := 'agent';
+  v_code text := nullif(trim(new.raw_user_meta_data->>'join_code'), '');
+begin
+  if v_code is not null then
+    select id into v_org from public.organizations where join_code = lower(v_code);
+    if v_org is null then
+      raise exception 'Invalid team join code';
+    end if;
+  else
+    insert into public.organizations (name)
+    values (coalesce(nullif(trim(new.raw_user_meta_data->>'org_name'), ''), 'My organisation'))
+    returning id into v_org;
+    v_role := 'owner';
+
+    insert into public.scorecard_templates (org_id, name, description, criteria)
+    values (v_org, 'Standard sales call', 'Default quality scorecard for outbound sales calls', '[
+      {"id":"greeting","name":"Greeting and introduction","description":"Agent greets politely, gives their name and company, and states the reason for the call.","max_points":10},
+      {"id":"compliance","name":"Compliance","description":"Agent tells the customer the call is recorded and respects any request not to be contacted.","max_points":15},
+      {"id":"discovery","name":"Needs discovery","description":"Agent asks relevant open questions and listens to understand the customer''s situation.","max_points":20},
+      {"id":"product","name":"Product knowledge","description":"Agent explains the offer accurately and clearly, matched to the customer''s needs.","max_points":20},
+      {"id":"objections","name":"Objection handling","description":"Agent acknowledges objections and responds calmly and credibly without pressure.","max_points":15},
+      {"id":"close","name":"Close and next steps","description":"Agent asks for a commitment or agrees a clear next step, and confirms details.","max_points":10},
+      {"id":"tone","name":"Tone and professionalism","description":"Agent is courteous, clear and confident throughout; no interrupting or talking over.","max_points":10}
+    ]'::jsonb);
+  end if;
+
+  insert into public.profiles (id, org_id, full_name, email, role)
+  values (new.id, v_org, new.raw_user_meta_data->>'full_name', new.email, v_role);
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- ---------- Dialer queue ----------
+-- Hands the calling agent the next contact to dial. Safe with many agents on one campaign.
+create or replace function public.claim_next_contact(p_campaign uuid) returns setof public.contacts
+language plpgsql security definer set search_path = public as $$
+declare
+  v_org uuid := public.current_org_id();
+begin
+  if v_org is null then
+    raise exception 'Not signed in';
+  end if;
+  return query
+  update public.contacts set
+    status = 'in_progress',
+    assigned_to = auth.uid(),
+    attempts = attempts + 1,
+    last_attempt_at = now()
+  where id = (
+    select c.id
+    from public.contacts c
+    join public.campaigns ca on ca.id = c.campaign_id
+    where c.campaign_id = p_campaign
+      and c.org_id = v_org
+      and ca.status = 'active'
+      and c.attempts < ca.max_attempts
+      and (
+        (c.status in ('pending', 'retry') and (c.next_attempt_at is null or c.next_attempt_at <= now()))
+        -- contacts abandoned mid-call (browser closed) go back in the queue after 30 minutes
+        or (c.status = 'in_progress' and c.last_attempt_at < now() - interval '30 minutes')
+      )
+      and not exists (select 1 from public.dnc_numbers d where d.org_id = c.org_id and d.phone = c.phone)
+    order by c.next_attempt_at nulls last, c.created_at
+    limit 1
+    for update of c skip locked
+  )
+  returning *;
+end;
+$$;
+
+-- Server-only: claims a batch for AI voice broadcast campaigns.
+create or replace function public.claim_contacts_batch(p_campaign uuid, p_org uuid, p_limit int)
+returns setof public.contacts
+language plpgsql security definer set search_path = public as $$
+begin
+  return query
+  update public.contacts set
+    status = 'in_progress',
+    attempts = attempts + 1,
+    last_attempt_at = now()
+  where id in (
+    select c.id
+    from public.contacts c
+    join public.campaigns ca on ca.id = c.campaign_id
+    where c.campaign_id = p_campaign
+      and c.org_id = p_org
+      and c.attempts < ca.max_attempts
+      and c.status in ('pending', 'retry')
+      and (c.next_attempt_at is null or c.next_attempt_at <= now())
+      and not exists (select 1 from public.dnc_numbers d where d.org_id = c.org_id and d.phone = c.phone)
+    order by c.next_attempt_at nulls last, c.created_at
+    limit greatest(1, least(p_limit, 50))
+    for update of c skip locked
+  )
+  returning *;
+end;
+$$;
+revoke execute on function public.claim_contacts_batch(uuid, uuid, int) from public, anon, authenticated;
+grant execute on function public.claim_contacts_batch(uuid, uuid, int) to service_role;
+
+-- ---------- Row level security: every row is private to its organisation ----------
+alter table public.organizations enable row level security;
+alter table public.profiles enable row level security;
+alter table public.scorecard_templates enable row level security;
+alter table public.campaigns enable row level security;
+alter table public.contacts enable row level security;
+alter table public.dnc_numbers enable row level security;
+alter table public.calls enable row level security;
+alter table public.transcripts enable row level security;
+alter table public.scorecards enable row level security;
+
+create policy org_read on public.organizations for select using (id = public.current_org_id());
+create policy org_update on public.organizations for update
+  using (id = public.current_org_id() and public.is_manager());
+
+create policy profiles_read on public.profiles for select using (org_id = public.current_org_id());
+create policy profiles_update_self on public.profiles for update
+  using (id = auth.uid()) with check (id = auth.uid() and org_id = public.current_org_id());
+
+create policy templates_read on public.scorecard_templates for select using (org_id = public.current_org_id());
+create policy templates_write on public.scorecard_templates for all
+  using (org_id = public.current_org_id() and public.is_manager())
+  with check (org_id = public.current_org_id() and public.is_manager());
+
+create policy campaigns_read on public.campaigns for select using (org_id = public.current_org_id());
+create policy campaigns_write on public.campaigns for all
+  using (org_id = public.current_org_id() and public.is_manager())
+  with check (org_id = public.current_org_id() and public.is_manager());
+
+create policy contacts_read on public.contacts for select using (org_id = public.current_org_id());
+create policy contacts_insert on public.contacts for insert
+  with check (org_id = public.current_org_id() and public.is_manager());
+create policy contacts_update on public.contacts for update
+  using (org_id = public.current_org_id()) with check (org_id = public.current_org_id());
+create policy contacts_delete on public.contacts for delete
+  using (org_id = public.current_org_id() and public.is_manager());
+
+create policy dnc_read on public.dnc_numbers for select using (org_id = public.current_org_id());
+create policy dnc_insert on public.dnc_numbers for insert with check (org_id = public.current_org_id());
+create policy dnc_delete on public.dnc_numbers for delete
+  using (org_id = public.current_org_id() and public.is_manager());
+
+create policy calls_read on public.calls for select using (org_id = public.current_org_id());
+create policy calls_insert on public.calls for insert with check (org_id = public.current_org_id());
+create policy calls_update on public.calls for update
+  using (org_id = public.current_org_id()) with check (org_id = public.current_org_id());
+
+-- Transcripts and scorecards are written by the server only (service role bypasses RLS).
+create policy transcripts_read on public.transcripts for select using (org_id = public.current_org_id());
+create policy scorecards_read on public.scorecards for select using (org_id = public.current_org_id());
+
+-- A user must not be able to promote themselves: role and org are locked for normal users.
+create or replace function public.protect_profile_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null and not public.is_manager() then
+    new.role := old.role;
+  end if;
+  new.org_id := old.org_id;
+  return new;
+end;
+$$;
+create trigger profiles_protect before update on public.profiles
+  for each row execute function public.protect_profile_fields();
+
+create policy profiles_manage on public.profiles for update
+  using (org_id = public.current_org_id() and public.is_manager())
+  with check (org_id = public.current_org_id());

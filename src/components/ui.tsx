@@ -1,0 +1,68 @@
+const TONES: Record<string, string> = {
+  green: "bg-green-100 text-green-800",
+  amber: "bg-amber-100 text-amber-800",
+  red: "bg-red-100 text-red-800",
+  blue: "bg-indigo-100 text-indigo-800",
+  grey: "bg-slate-100 text-slate-700",
+};
+
+const STATUS_TONE: Record<string, string> = {
+  active: "green", completed: "blue", done: "green", "in-progress": "green", sale: "green", interested: "green",
+  positive: "green", draft: "grey", paused: "amber", pending: "grey", retry: "amber", callback: "amber",
+  transcribing: "amber", scoring: "amber", skipped: "grey", neutral: "grey", failed: "red", dnc: "red",
+  busy: "amber", "no-answer": "amber", no_answer: "amber", negative: "red", canceled: "grey",
+};
+
+export function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) {
+  const key = tone ?? STATUS_TONE[String(children)] ?? "grey";
+  return <span className={`badge ${TONES[key] ?? TONES.grey}`}>{children}</span>;
+}
+
+export function ScoreBadge({ percent }: { percent: number | null | undefined }) {
+  if (percent === null || percent === undefined) return <span className="text-slate-400">—</span>;
+  const tone = percent >= 80 ? "green" : percent >= 60 ? "amber" : "red";
+  return <Badge tone={tone}>{Math.round(percent)}%</Badge>;
+}
+
+export function PageHeader({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+      </div>
+      <div className="flex items-center gap-2">{children}</div>
+    </div>
+  );
+}
+
+export function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+  return (
+    <div className="card">
+      <div className="text-sm text-slate-500">{label}</div>
+      <div className="mt-1 text-3xl font-semibold tracking-tight">{value}</div>
+      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+    </div>
+  );
+}
+
+export function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+/** Supabase returns a joined row as an object or a one-item array; this normalises it. */
+export function one<T>(v: T | T[] | null | undefined): T | null {
+  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}

@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rigel Voice
 
-## Getting Started
+Campaign dialer with AI call scoring. Agents call through the browser (Twilio), calls are
+recorded and transcribed (Deepgram), and Claude scores each call against your scorecard.
+An AI voice handles voicemail drops and automated broadcast campaigns.
 
-First, run the development server:
+Stack: Next.js 16 · Supabase (auth + Postgres) · Vercel · Twilio Voice · Deepgram · Anthropic.
+
+## What it does
+
+- **Campaigns** – agent-dialled lists or AI voice broadcasts, CSV contact import with phone clean-up
+- **Power dialer** – browser softphone, auto-dial next contact, script, mute, keypad, outcomes, call-back times, retries
+- **Voicemail drop** – one click leaves an AI-voiced message and frees the agent
+- **AI voice broadcast** – automated spoken message with "press 1 for a call back, 9 to opt out"
+- **Recording → transcript → scorecard** – per-criterion scores, evidence quotes, coaching tips, compliance flags
+- **Scorecard editor** – define your own criteria and points
+- **Dashboard** – connect rate, talk time, average AI score, per-agent table
+- **Teams** – owner / manager / agent roles, join code, every company's data isolated by row level security
+- **Do-not-call list** – enforced by the dialer and broadcasts
+
+## Setup (about 30 minutes)
+
+### 1. Supabase
+1. Create a project at supabase.com.
+2. SQL Editor → paste all of `supabase/schema.sql` → Run.
+3. Project Settings → API: copy the project URL, `anon` key and `service_role` key.
+4. (Optional, for quick testing) Authentication → Providers → Email → turn off "Confirm email".
+
+### 2. Deploy to Vercel
+1. Import this repo in Vercel.
+2. Add every variable from `.env.example` (you will fill in the Twilio ones next).
+3. Deploy, then set `APP_BASE_URL` to the live URL (e.g. `https://rigel-voice.vercel.app`) and redeploy.
+
+Background scoring uses a function that may run for a few minutes. Vercel's default limits allow this
+on current plans; if scoring is cut off on long calls, raise the function max duration in project settings.
+
+### 3. Twilio
+1. Buy a voice-capable phone number. Put it in `TWILIO_CALLER_ID` as `+353…`.
+2. Account → API keys → create a Standard key → `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET`.
+3. Voice → TwiML Apps → create one with **Voice Request URL** = `{APP_BASE_URL}/api/twilio/voice` (HTTP POST).
+   Copy its SID to `TWILIO_TWIML_APP_SID`.
+4. Copy the Account SID and Auth Token to `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`.
+5. Voice → Settings → Geo permissions: enable the countries you will call.
+
+### 4. Deepgram and Anthropic
+- Deepgram console → API key → `DEEPGRAM_API_KEY`.
+- Anthropic console → API key → `ANTHROPIC_API_KEY`. `ANTHROPIC_MODEL` sets which Claude model scores calls.
+
+### 5. First run
+1. Open the app, create an account (this creates your company and a default scorecard).
+2. Campaigns → New campaign → set status to **Active** → import a CSV with a `phone` column.
+3. Dialer → Start dialing. Use your own mobile as the first contact.
+4. After you hang up, the call appears under Calls; the scorecard arrives about a minute later.
+
+## Running on your laptop
 
 ```bash
+npm install
+cp .env.example .env.local   # fill in the values
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Twilio has to reach your machine for calls to work locally. Run `ngrok http 3000`, set `APP_BASE_URL`
+and the TwiML App's Voice URL to the ngrok address, and restart `npm run dev`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How a call flows
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Dialer asks `/api/dialer/next` → the database hands this agent the next contact (safe with many agents).
+2. Browser connects to Twilio → Twilio calls `/api/twilio/voice` → we return instructions to dial and record.
+3. Twilio reports progress to `/api/twilio/status` and the finished recording to `/api/twilio/recording`.
+4. `src/lib/processing.ts` downloads the recording, transcribes it with Deepgram (agent and customer on
+   separate channels), and asks Claude to fill in the scorecard. Totals are calculated in code.
 
-## Learn More
+All Twilio webhooks verify Twilio's signature, so `APP_BASE_URL` must exactly match the public URL.
 
-To learn more about Next.js, take a look at the following resources:
+## Not in this version
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Predictive / parallel dialling** (several lines per agent) – needs an always-on worker, not serverless.
+- **Two-way AI voice agent** (AI holds a conversation) – needs a WebSocket server for Twilio ConversationRelay.
+- **Inbound queues / IVR, SMS, email channels.**
+- **Per-customer Twilio accounts and billing** – all companies currently share the one Twilio account in env.
+- **Rigel CRM link** – contacts are imported by CSV; the Supabase schema is close enough to sync later.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Before calling real customers
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+You are responsible for telemarketing and data protection rules where you call. In Ireland that includes
+checking the National Directory Database opt-out register for marketing calls, having prior consent for
+automated (AI voice) marketing calls, telling people calls are recorded, and GDPR duties for recordings
+and transcripts (lawful basis, retention, processor agreements with Twilio, Deepgram and Anthropic).
+Get advice before launch.

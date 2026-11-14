@@ -1,0 +1,252 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { createAdminClient } from "./supabase/admin";
+import type { Criterion, ScoreResult, Utterance } from "./types";
+
+const MIN_SECONDS = Number(process.env.MIN_SCORING_SECONDS ?? 20);
+
+/**
+ * Full pipeline for one recorded call:
+ * Twilio recording -> Deepgram transcript -> Claude scorecard -> saved to Supabase.
+ */
+export async function processCall(callId: string) {
+  const db = createAdminClient();
+  const { data: call } = await db
+    .from("calls")
+    .select("*, campaigns(name, script, scorecard_template_id)")
+    .eq("id", callId)
+    .single();
+  if (!call || !call.recording_url) return;
+
+  const setStatus = (processing_status: string, processing_error: string | null = null) =>
+    db.from("calls").update({ processing_status, processing_error }).eq("id", callId);
+
+  try {
+    if ((call.recording_duration ?? 0) < MIN_SECONDS) {
+      await setStatus("skipped", `Recording shorter than ${MIN_SECONDS}s`);
+      return;
+    }
+
+    // 1. Transcribe
+    await setStatus("transcribing");
+    const audio = await downloadRecording(call.recording_url);
+    const utterances = await transcribe(audio);
+    const text = utterances.map((u) => `[${stamp(u.start)}] ${u.speaker}: ${u.text}`).join("\n");
+    await db.from("transcripts").upsert({
+      call_id: callId,
+      org_id: call.org_id,
+      text,
+      utterances,
+      provider: "deepgram",
+    });
+    if (!text.trim()) {
+      await setStatus("skipped", "No speech detected");
+      return;
+    }
+
+    // 2. Score
+    const templateId = call.campaigns?.scorecard_template_id;
+    let template = null;
+    if (templateId) {
+      template = (await db.from("scorecard_templates").select("*").eq("id", templateId).single()).data;
+    }
+    if (!template) {
+      template = (
+        await db
+          .from("scorecard_templates")
+          .select("*")
+          .eq("org_id", call.org_id)
+          .order("created_at")
+          .limit(1)
+          .maybeSingle()
+      ).data;
+    }
+    if (!template || !Array.isArray(template.criteria) || template.criteria.length === 0) {
+      await setStatus("done", "Transcribed. No scorecard template to score against.");
+      return;
+    }
+
+    await setStatus("scoring");
+    const scored = await scoreTranscript(text, template.criteria as Criterion[], {
+      campaign: call.campaigns?.name,
+      script: call.campaigns?.script,
+    });
+
+    await db.from("scorecards").upsert(
+      {
+        call_id: callId,
+        org_id: call.org_id,
+        template_id: template.id,
+        ...scored,
+      },
+      { onConflict: "call_id" },
+    );
+    await setStatus("done");
+  } catch (err) {
+    console.error("processCall failed", callId, err);
+    await setStatus("failed", err instanceof Error ? err.message.slice(0, 500) : "Unknown error");
+  }
+}
+
+async function downloadRecording(recordingUrl: string) {
+  const auth = Buffer.from(
+    `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`,
+  ).toString("base64");
+  const res = await fetch(`${recordingUrl}.mp3`, { headers: { Authorization: `Basic ${auth}` } });
+  if (!res.ok) throw new Error(`Could not download recording (${res.status})`);
+  return await res.arrayBuffer();
+}
+
+/** Dual-channel recording: channel 0 is the agent's leg, channel 1 is the customer. */
+async function transcribe(audio: ArrayBuffer): Promise<Utterance[]> {
+  const params = new URLSearchParams({
+    model: process.env.DEEPGRAM_MODEL ?? "nova-3",
+    language: process.env.DEEPGRAM_LANGUAGE ?? "en",
+    smart_format: "true",
+    multichannel: "true",
+    utterances: "true",
+  });
+  const res = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+      "Content-Type": "audio/mpeg",
+    },
+    body: audio,
+  });
+  if (!res.ok) throw new Error(`Deepgram error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const json = await res.json();
+  const raw: { start: number; end: number; channel: number; transcript: string }[] =
+    json?.results?.utterances ?? [];
+  const channelCount = json?.metadata?.channels ?? 1;
+  return raw
+    .filter((u) => u.transcript?.trim())
+    .sort((a, b) => a.start - b.start)
+    .map((u) => ({
+      speaker: channelCount < 2 ? "Speaker" : u.channel === 0 ? "Agent" : "Customer",
+      start: u.start,
+      end: u.end,
+      text: u.transcript.trim(),
+    }));
+}
+
+async function scoreTranscript(
+  transcript: string,
+  criteria: Criterion[],
+  context: { campaign?: string | null; script?: string | null },
+) {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
+
+  const criteriaText = criteria
+    .map((c) => `- id "${c.id}" | ${c.name} | max ${c.max_points} points | ${c.description}`)
+    .join("\n");
+
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: 4000,
+    system:
+      "You are a contact-centre quality assurance analyst. You score call transcripts against a scorecard, " +
+      "fairly and consistently. Base every score only on what is in the transcript. Quote short evidence " +
+      "from the call for each criterion. If a criterion could not apply to this call, award full points and " +
+      "say why. Transcripts are machine-generated and may contain small errors; do not penalise the agent for those.",
+    tools: [
+      {
+        name: "submit_scorecard",
+        description: "Record the completed scorecard for this call.",
+        input_schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string", description: "2-4 sentence summary of the call and its outcome." },
+            sentiment: {
+              type: "string",
+              enum: ["positive", "neutral", "negative"],
+              description: "The customer's overall sentiment.",
+            },
+            results: {
+              type: "array",
+              description: "One entry per scorecard criterion, in the same order.",
+              items: {
+                type: "object",
+                properties: {
+                  criterion_id: { type: "string" },
+                  score: { type: "number", description: "Points awarded, from 0 up to the criterion's max." },
+                  evidence: { type: "string", description: "Short quote or moment from the call." },
+                  comment: { type: "string", description: "One sentence explaining the score." },
+                },
+                required: ["criterion_id", "score", "evidence", "comment"],
+              },
+            },
+            coaching: {
+              type: "array",
+              items: { type: "string" },
+              description: "Up to 3 specific, practical coaching tips for the agent.",
+            },
+            compliance_flags: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Any compliance concerns, e.g. no recording notice, ignoring a do-not-call request, misleading claims. Empty if none.",
+            },
+          },
+          required: ["summary", "sentiment", "results", "coaching", "compliance_flags"],
+        },
+      },
+    ],
+    tool_choice: { type: "tool", name: "submit_scorecard" },
+    messages: [
+      {
+        role: "user",
+        content:
+          `Campaign: ${context.campaign ?? "n/a"}\n\n` +
+          (context.script ? `Agent script / guidance:\n${context.script}\n\n` : "") +
+          `Scorecard criteria:\n${criteriaText}\n\n` +
+          `Call transcript:\n<transcript>\n${transcript.slice(0, 150_000)}\n</transcript>\n\n` +
+          "Score this call against every criterion.",
+      },
+    ],
+  });
+
+  const block = response.content.find((b) => b.type === "tool_use");
+  if (!block || block.type !== "tool_use") throw new Error("Claude did not return a scorecard");
+  const out = block.input as {
+    summary: string;
+    sentiment: string;
+    results: { criterion_id: string; score: number; evidence: string; comment: string }[];
+    coaching: string[];
+    compliance_flags: string[];
+  };
+
+  // Totals are computed here, not by the model, and scores are clamped to each criterion's range.
+  const results: ScoreResult[] = criteria.map((c) => {
+    const r = out.results?.find((x) => x.criterion_id === c.id);
+    const score = Math.max(0, Math.min(c.max_points, Number(r?.score ?? 0)));
+    return {
+      criterion_id: c.id,
+      name: c.name,
+      max_points: c.max_points,
+      score,
+      evidence: r?.evidence ?? "",
+      comment: r?.comment ?? "Not scored",
+    };
+  });
+  const total_score = results.reduce((s, r) => s + r.score, 0);
+  const max_score = results.reduce((s, r) => s + r.max_points, 0);
+
+  return {
+    total_score,
+    max_score,
+    percent: max_score ? Math.round((total_score / max_score) * 1000) / 10 : 0,
+    summary: out.summary ?? "",
+    sentiment: out.sentiment ?? "neutral",
+    results,
+    coaching: out.coaching ?? [],
+    compliance_flags: out.compliance_flags ?? [],
+    model,
+  };
+}
+
+function stamp(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}

@@ -1,0 +1,29 @@
+import { getContext } from "@/lib/auth";
+
+/** Streams a call recording to signed-in members of the organisation that owns it. */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await getContext();
+  if (!ctx) return new Response("Not signed in", { status: 401 });
+  const { id } = await params;
+
+  // Row level security means this only finds calls in the user's own organisation.
+  const { data: call } = await ctx.supabase.from("calls").select("recording_url").eq("id", id).single();
+  if (!call?.recording_url) return new Response("Not found", { status: 404 });
+
+  const auth = Buffer.from(
+    `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`,
+  ).toString("base64");
+  const headers: Record<string, string> = { Authorization: `Basic ${auth}` };
+  const range = req.headers.get("range");
+  if (range) headers.Range = range;
+
+  const upstream = await fetch(`${call.recording_url}.mp3`, { headers });
+  if (!upstream.ok && upstream.status !== 206) return new Response("Recording unavailable", { status: 502 });
+
+  const out = new Headers({ "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=3600" });
+  for (const h of ["content-length", "content-range", "accept-ranges"]) {
+    const v = upstream.headers.get(h);
+    if (v) out.set(h, v);
+  }
+  return new Response(upstream.body, { status: upstream.status, headers: out });
+}
