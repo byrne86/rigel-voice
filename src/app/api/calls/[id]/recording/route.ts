@@ -1,14 +1,16 @@
-import { getContext } from "@/lib/auth";
+import { getContext, isUuid } from "@/lib/auth";
+import { isTwilioRecordingUrl } from "@/lib/twilio";
 
 /** Streams a call recording to signed-in members of the organisation that owns it. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getContext();
   if (!ctx) return new Response("Not signed in", { status: 401 });
   const { id } = await params;
+  if (!isUuid(id)) return new Response("Not found", { status: 404 });
 
   // Row level security means this only finds calls in the user's own organisation.
   const { data: call } = await ctx.supabase.from("calls").select("recording_url").eq("id", id).single();
-  if (!call?.recording_url) return new Response("Not found", { status: 404 });
+  if (!isTwilioRecordingUrl(call?.recording_url)) return new Response("Not found", { status: 404 });
 
   const auth = Buffer.from(
     `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`,

@@ -1,4 +1,4 @@
-import { getContext, isManager } from "@/lib/auth";
+import { CALLING_DISABLED, callingEnabled, getContext, isManager, isUuid } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { baseUrl, twilioClient } from "@/lib/twilio";
 
@@ -10,6 +10,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!ctx) return Response.json({ error: "Not signed in" }, { status: 401 });
   if (!isManager(ctx.profile)) return Response.json({ error: "Managers only" }, { status: 403 });
   const { id } = await params;
+  if (!isUuid(id)) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await callingEnabled(ctx.profile.org_id))) {
+    return Response.json({ error: CALLING_DISABLED }, { status: 403 });
+  }
   const body = await req.json().catch(() => ({}));
   const limit = Math.max(1, Math.min(Number(body.limit ?? 10), 50));
 

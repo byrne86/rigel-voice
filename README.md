@@ -48,9 +48,11 @@ on current plans; if scoring is cut off on long calls, raise the function max du
 
 ### 5. First run
 1. Open the app, create an account (this creates your company and a default scorecard).
-2. Campaigns → New campaign → set status to **Active** → import a CSV with a `phone` column.
-3. Dialer → Start dialing. Use your own mobile as the first contact.
-4. After you hang up, the call appears under Calls; the scorecard arrives about a minute later.
+2. New companies cannot place calls until you allow it. In Supabase SQL Editor run:
+   `update organizations set calling_enabled = true where name = 'Your company';`
+3. Campaigns → New campaign → set status to **Active** → import a CSV with a `phone` column.
+4. Dialer → Start dialing. Use your own mobile as the first contact.
+5. After you hang up, the call appears under Calls; the scorecard arrives about a minute later.
 
 ## Running on your laptop
 
@@ -72,6 +74,19 @@ and the TwiML App's Voice URL to the ngrok address, and restart `npm run dev`.
    separate channels), and asks Claude to fill in the scorecard. Totals are calculated in code.
 
 All Twilio webhooks verify Twilio's signature, so `APP_BASE_URL` must exactly match the public URL.
+
+## Security
+
+- Every company's data is isolated by Postgres row level security.
+- Browsers cannot create or change call records; the server does it after checking permissions,
+  so nobody can dial numbers outside a campaign or tamper with recordings.
+- Twilio webhooks are rejected unless Twilio's signature checks out.
+- Recordings are streamed only to signed-in members of the owning company.
+- New sign-ups cannot place calls until you set `calling_enabled` on their organisation.
+- Strict security headers (CSP, HSTS, no framing, microphone limited to this site).
+
+Supabase settings to turn on: Authentication → email confirmation, leaked-password protection,
+and a minimum password length of 8+.
 
 ## Not in this version
 

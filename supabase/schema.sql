@@ -6,6 +6,8 @@ create table public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   join_code text not null unique default encode(gen_random_bytes(6), 'hex'),
+  -- New companies cannot place calls until you switch this on (stops strangers running up your Twilio bill).
+  calling_enabled boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -254,6 +256,8 @@ begin
 end;
 $$;
 revoke execute on function public.claim_contacts_batch(uuid, uuid, int) from public, anon, authenticated;
+revoke execute on function public.claim_next_contact(uuid) from public, anon;
+grant execute on function public.claim_next_contact(uuid) to authenticated;
 grant execute on function public.claim_contacts_batch(uuid, uuid, int) to service_role;
 
 -- ---------- Row level security: every row is private to its organisation ----------
@@ -268,8 +272,7 @@ alter table public.transcripts enable row level security;
 alter table public.scorecards enable row level security;
 
 create policy org_read on public.organizations for select using (id = public.current_org_id());
-create policy org_update on public.organizations for update
-  using (id = public.current_org_id() and public.is_manager());
+-- No update policy: organisation settings (incl. calling_enabled) are changed by the platform owner only.
 
 create policy profiles_read on public.profiles for select using (org_id = public.current_org_id());
 create policy profiles_update_self on public.profiles for update
@@ -289,7 +292,8 @@ create policy contacts_read on public.contacts for select using (org_id = public
 create policy contacts_insert on public.contacts for insert
   with check (org_id = public.current_org_id() and public.is_manager());
 create policy contacts_update on public.contacts for update
-  using (org_id = public.current_org_id()) with check (org_id = public.current_org_id());
+  using (org_id = public.current_org_id() and public.is_manager())
+  with check (org_id = public.current_org_id() and public.is_manager());
 create policy contacts_delete on public.contacts for delete
   using (org_id = public.current_org_id() and public.is_manager());
 
@@ -298,10 +302,9 @@ create policy dnc_insert on public.dnc_numbers for insert with check (org_id = p
 create policy dnc_delete on public.dnc_numbers for delete
   using (org_id = public.current_org_id() and public.is_manager());
 
+-- Calls are created and changed by the server only, after it has checked the user is allowed.
+-- This stops anyone dialling arbitrary numbers or pointing a call at a fake recording URL.
 create policy calls_read on public.calls for select using (org_id = public.current_org_id());
-create policy calls_insert on public.calls for insert with check (org_id = public.current_org_id());
-create policy calls_update on public.calls for update
-  using (org_id = public.current_org_id()) with check (org_id = public.current_org_id());
 
 -- Transcripts and scorecards are written by the server only (service role bypasses RLS).
 create policy transcripts_read on public.transcripts for select using (org_id = public.current_org_id());
@@ -310,11 +313,27 @@ create policy scorecards_read on public.scorecards for select using (org_id = pu
 -- A user must not be able to promote themselves: role and org are locked for normal users.
 create or replace function public.protect_profile_fields() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare
+  v_my_role text;
 begin
-  if auth.uid() is not null and not public.is_manager() then
+  new.org_id := old.org_id;
+  new.id := old.id;
+  if auth.uid() is null then
+    return new; -- server / SQL editor
+  end if;
+  select role into v_my_role from public.profiles where id = auth.uid();
+  -- Only you can change your own name and email.
+  if auth.uid() <> old.id then
+    new.full_name := old.full_name;
+    new.email := old.email;
+  end if;
+  -- Agents cannot change roles; managers cannot touch the owner or make anyone owner;
+  -- nobody can change their own role.
+  if v_my_role = 'agent'
+     or auth.uid() = old.id
+     or (v_my_role = 'manager' and (old.role = 'owner' or new.role = 'owner')) then
     new.role := old.role;
   end if;
-  new.org_id := old.org_id;
   return new;
 end;
 $$;
@@ -324,3 +343,6 @@ create trigger profiles_protect before update on public.profiles
 create policy profiles_manage on public.profiles for update
   using (org_id = public.current_org_id() and public.is_manager())
   with check (org_id = public.current_org_id());
+
+-- To let a customer start calling, run (with their organisation id):
+--   update public.organizations set calling_enabled = true where id = '...';

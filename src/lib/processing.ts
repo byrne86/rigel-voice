@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "./supabase/admin";
+import { isTwilioRecordingUrl } from "./twilio";
 import type { Criterion, ScoreResult, Utterance } from "./types";
 
 const MIN_SECONDS = Number(process.env.MIN_SCORING_SECONDS ?? 20);
@@ -88,6 +89,7 @@ export async function processCall(callId: string) {
 }
 
 async function downloadRecording(recordingUrl: string) {
+  if (!isTwilioRecordingUrl(recordingUrl)) throw new Error("Recording URL is not a Twilio URL");
   const auth = Buffer.from(
     `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`,
   ).toString("base64");

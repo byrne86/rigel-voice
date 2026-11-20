@@ -1,10 +1,15 @@
-import { getContext } from "@/lib/auth";
+import { CALLING_DISABLED, callingEnabled, getContext, isUuid } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Claims the next contact in a campaign for this agent and opens a call record for it. */
 export async function POST(req: Request) {
   const ctx = await getContext();
   if (!ctx) return Response.json({ error: "Not signed in" }, { status: 401 });
-  const { campaignId } = await req.json();
+  const { campaignId } = await req.json().catch(() => ({}));
+  if (!isUuid(campaignId)) return Response.json({ error: "Campaign not found" }, { status: 404 });
+  if (!(await callingEnabled(ctx.profile.org_id))) {
+    return Response.json({ error: CALLING_DISABLED }, { status: 403 });
+  }
 
   const { data: campaign } = await ctx.supabase.from("campaigns").select("*").eq("id", campaignId).single();
   if (!campaign || campaign.mode !== "agent") {
@@ -21,9 +26,11 @@ export async function POST(req: Request) {
   const contact = claimed?.[0];
   if (!contact) return Response.json({ contact: null });
 
-  const { data: call, error: callError } = await ctx.supabase
+  // Created with the server key: browsers cannot create call records themselves.
+  const { data: call, error: callError } = await createAdminClient()
     .from("calls")
     .insert({
+      org_id: ctx.profile.org_id,
       campaign_id: campaignId,
       contact_id: contact.id,
       agent_id: ctx.user.id,

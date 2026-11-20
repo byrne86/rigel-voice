@@ -1,5 +1,7 @@
 import { after } from "next/server";
-import { getContext, isManager } from "@/lib/auth";
+import { getContext, isManager, isUuid } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isTwilioRecordingUrl } from "@/lib/twilio";
 import { processCall } from "@/lib/processing";
 
 export const maxDuration = 300;
@@ -10,12 +12,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!ctx) return Response.json({ error: "Not signed in" }, { status: 401 });
   if (!isManager(ctx.profile)) return Response.json({ error: "Managers only" }, { status: 403 });
   const { id } = await params;
+  if (!isUuid(id)) return Response.json({ error: "Call not found" }, { status: 404 });
 
   const { data: call } = await ctx.supabase.from("calls").select("id, recording_url").eq("id", id).single();
   if (!call) return Response.json({ error: "Call not found" }, { status: 404 });
-  if (!call.recording_url) return Response.json({ error: "This call has no recording" }, { status: 409 });
+  if (!isTwilioRecordingUrl(call.recording_url)) return Response.json({ error: "This call has no recording" }, { status: 409 });
 
-  await ctx.supabase.from("calls").update({ processing_status: "pending", processing_error: null }).eq("id", id);
+  await createAdminClient().from("calls").update({ processing_status: "pending", processing_error: null }).eq("id", id);
   after(() => processCall(id));
   return Response.json({ ok: true });
 }

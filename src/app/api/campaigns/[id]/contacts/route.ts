@@ -1,5 +1,5 @@
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
-import { getContext, isManager } from "@/lib/auth";
+import { getContext, isManager, isUuid } from "@/lib/auth";
 
 interface Row {
   first_name?: string;
@@ -16,7 +16,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!ctx) return Response.json({ error: "Not signed in" }, { status: 401 });
   if (!isManager(ctx.profile)) return Response.json({ error: "Managers only" }, { status: 403 });
   const { id } = await params;
-  const { rows } = (await req.json()) as { rows: Row[] };
+  if (!isUuid(id)) return Response.json({ error: "Not found" }, { status: 404 });
+  const { rows } = ((await req.json().catch(() => ({}))) ?? {}) as { rows: Row[] };
   if (!Array.isArray(rows) || rows.length === 0) return Response.json({ error: "No rows" }, { status: 400 });
   if (rows.length > 5000) return Response.json({ error: "Import up to 5,000 contacts at a time" }, { status: 400 });
 
@@ -38,11 +39,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     clean.push({
       campaign_id: id,
       phone,
-      first_name: row.first_name?.trim() || null,
-      last_name: row.last_name?.trim() || null,
-      company: row.company?.trim() || null,
-      email: row.email?.trim() || null,
-      notes: row.notes?.trim() || null,
+      first_name: clip(row.first_name, 100),
+      last_name: clip(row.last_name, 100),
+      company: clip(row.company, 200),
+      email: clip(row.email, 200),
+      notes: clip(row.notes, 2000),
     });
   }
 
@@ -56,4 +57,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     imported += data?.length ?? 0;
   }
   return Response.json({ imported, invalid, duplicates: rows.length - invalid - imported });
+}
+
+function clip(v: unknown, max: number) {
+  const t = typeof v === "string" ? v.trim() : "";
+  return t ? t.slice(0, max) : null;
 }

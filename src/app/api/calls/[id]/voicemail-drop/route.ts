@@ -1,4 +1,4 @@
-import { getContext } from "@/lib/auth";
+import { getContext, isUuid } from "@/lib/auth";
 import { personalise, twilioClient, VoiceResponse } from "@/lib/twilio";
 
 /**
@@ -9,6 +9,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const ctx = await getContext();
   if (!ctx) return Response.json({ error: "Not signed in" }, { status: 401 });
   const { id } = await params;
+  if (!isUuid(id)) return Response.json({ error: "Call not found" }, { status: 404 });
 
   const { data: call } = await ctx.supabase
     .from("calls")
@@ -19,6 +20,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!call.campaigns?.voicemail_message) {
     return Response.json({ error: "This campaign has no voicemail message" }, { status: 409 });
   }
+  if (call.ended_at) return Response.json({ error: "The call has already ended" }, { status: 409 });
   if (!call.twilio_child_sid) {
     return Response.json({ error: "The call has not connected yet" }, { status: 409 });
   }

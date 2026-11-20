@@ -28,3 +28,20 @@ export async function getContext() {
 export function isManager(profile: Profile) {
   return profile.role === "owner" || profile.role === "manager";
 }
+
+/** Whether the platform owner has switched on calling for this user's company. */
+export async function callingEnabled(orgId: string) {
+  const { createAdminClient } = await import("./supabase/admin");
+  const { data } = await createAdminClient()
+    .from("organizations")
+    .select("calling_enabled")
+    .eq("id", orgId)
+    .single();
+  return data?.calling_enabled === true;
+}
+
+export const CALLING_DISABLED =
+  "Calling is not switched on for your company yet. Contact Rigel support to activate your account.";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (v: unknown): v is string => typeof v === "string" && UUID.test(v);

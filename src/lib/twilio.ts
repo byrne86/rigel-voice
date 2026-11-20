@@ -45,3 +45,14 @@ export function personalise(
     .replace(/\s{2,}/g, " ")
     .trim();
 }
+
+/** Recording URLs must point at Twilio's API; we never send our credentials anywhere else. */
+export function isTwilioRecordingUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && u.hostname === "api.twilio.com";
+  } catch {
+    return false;
+  }
+}
