@@ -17,10 +17,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: call } = await ctx.supabase
     .from("calls")
-    .select("*, campaigns(voicemail_drop_id), contacts(first_name, last_name, company)")
+    .select("*, campaigns(voicemail_drop_id, allow_voicemail_drops), contacts(first_name, last_name, company)")
     .eq("id", id)
     .single();
   if (!call || call.agent_id !== ctx.user.id) return Response.json({ error: "Call not found" }, { status: 404 });
+  if (call.campaigns?.allow_voicemail_drops === false) {
+    return Response.json({ error: "Voicemail drops are switched off for this campaign" }, { status: 409 });
+  }
   if (call.ended_at) return Response.json({ error: "The call has already ended" }, { status: 409 });
   if (!call.twilio_child_sid) return Response.json({ error: "The call has not connected yet" }, { status: 409 });
 
@@ -32,10 +35,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
   if (!drop) {
-    drop = (await ctx.supabase.from("voicemail_drops").select("*").eq("is_default", true).maybeSingle()).data;
+    // Your own message for this campaign first, then any of yours, then shared ones.
+    const query = ctx.supabase.from("voicemail_drops").select("*");
+    const { data: options } = isUuid(call.campaign_id)
+      ? await query.or(`campaign_id.is.null,campaign_id.eq.${call.campaign_id}`)
+      : await query.is("campaign_id", null);
+    drop =
+      (options ?? []).sort((a, b) => {
+        const score = (d: VoicemailDrop) => (d.owner_id === ctx.user.id ? 0 : 2) + (d.campaign_id === call.campaign_id ? 0 : 1);
+        return score(a) - score(b);
+      })[0] ?? null;
   }
   if (!drop) {
-    return Response.json({ error: "No voicemail drop is set up. Add one under Voicemails." }, { status: 409 });
+    return Response.json({ error: "No voicemail message is set up. Record one under Voicemails." }, { status: 409 });
   }
 
   const vr = new VoiceResponse();

@@ -20,7 +20,7 @@ export async function GET() {
   token.addGrant(
     new AccessToken.VoiceGrant({
       outgoingApplicationSid: process.env.TWILIO_TWIML_APP_SID!,
-      incomingAllow: false,
+      incomingAllow: true, // agents can take callbacks in the browser
     }),
   );
   return Response.json({ token: token.toJwt() });

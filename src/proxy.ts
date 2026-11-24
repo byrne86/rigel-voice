@@ -42,5 +42,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Twilio webhooks carry no session, so they skip the proxy entirely.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/twilio).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/twilio|api/cron).*)"],
 };

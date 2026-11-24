@@ -50,8 +50,47 @@ export interface Campaign {
   default_country: string;
   scorecard_template_id: string | null;
   voicemail_drop_id: string | null;
+  ai_context: string | null;
+  call_language: string;
+  feedback_language: string;
+  recording_disclosure: string | null;
+  allow_voicemail_drops: boolean;
+  crm_note: boolean;
+  crm_match_field: string | null;
+  crm_match_value: string | null;
+  is_default_inbound: boolean;
+  ring_agents_on_callback: boolean;
+  inbound_fallback: "voicemail" | "forward" | "hangup";
+  forward_to: string | null;
+  ring_seconds: number;
+  script_status: "draft" | "approved";
+  script_flow: string[];
+  script_objections: { objection: string; answer: string }[];
+  script_approved_at: string | null;
   created_at: string;
 }
+
+export interface CallList {
+  id: string;
+  campaign_id: string;
+  agent_id: string | null;
+  name: string;
+  source: string;
+  created_at: string;
+}
+
+export const LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "multi", label: "Mixed / auto-detect" },
+  { value: "ga", label: "Irish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "it", label: "Italian" },
+  { value: "nl", label: "Dutch" },
+  { value: "pl", label: "Polish" },
+  { value: "pt", label: "Portuguese" },
+];
 
 export interface Contact {
   id: string;
@@ -84,21 +123,37 @@ export interface ScoreResult {
 }
 
 export const DISPOSITIONS: { value: string; label: string; outcome: "completed" | "retry" | "dnc" }[] = [
+  { value: "meeting", label: "Meeting booked", outcome: "completed" },
   { value: "sale", label: "Sale / converted", outcome: "completed" },
   { value: "interested", label: "Interested", outcome: "completed" },
   { value: "callback", label: "Call back later", outcome: "retry" },
   { value: "not_interested", label: "Not interested", outcome: "completed" },
   { value: "no_answer", label: "No answer", outcome: "retry" },
   { value: "busy", label: "Busy", outcome: "retry" },
-  { value: "voicemail", label: "Voicemail", outcome: "retry" },
+  { value: "voicemail", label: "Voicemail left", outcome: "retry" },
+  { value: "gatekeeper", label: "Gatekeeper, try later", outcome: "retry" },
   { value: "wrong_number", label: "Wrong number", outcome: "completed" },
   { value: "dnc", label: "Do not call", outcome: "dnc" },
 ];
 
+const OTHER_LABELS: Record<string, string> = {
+  message_played: "Message played",
+  incoming: "Incoming call",
+  voicemail_received: "Voicemail received",
+  forwarded: "Forwarded",
+  missed: "Missed",
+};
+
 export function dispositionLabel(value: string | null | undefined) {
   if (!value) return "—";
-  return DISPOSITIONS.find((d) => d.value === value)?.label ?? value;
+  return DISPOSITIONS.find((d) => d.value === value)?.label ?? OTHER_LABELS[value] ?? value.replace(/_/g, " ");
 }
+
+export const ROLE_LABELS: Record<string, string> = {
+  agent: "Agent: own calls only",
+  manager: "Manager: all calls",
+  owner: "Admin",
+};
 
 export function contactName(c: { first_name?: string | null; last_name?: string | null; phone?: string } | null) {
   if (!c) return "Unknown";
@@ -119,6 +174,11 @@ export function daysAgoIso(days: number) {
 
 export interface VoicemailDrop {
   id: string;
+  owner_id: string | null;
+  campaign_id: string | null;
+  shared: boolean;
+  duration_seconds: number | null;
+  created_at?: string;
   name: string;
   kind: "tts" | "audio";
   message: string | null;

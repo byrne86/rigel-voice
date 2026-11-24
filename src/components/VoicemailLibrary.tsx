@@ -1,210 +1,233 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { VOICES, voiceName, voicemailAudioUrl, type VoicemailDrop } from "@/lib/types";
+import { WavRecorder } from "@/lib/wavRecorder";
 
-type Draft = { id?: string; name: string; kind: "tts" | "audio"; message: string; tts_voice: string; audio_path: string | null; is_default: boolean };
-
-const blank = (first: boolean): Draft => ({
-  name: "",
-  kind: "tts",
-  message: "",
-  tts_voice: "Polly.Amy-Neural",
-  audio_path: null,
-  is_default: first,
-});
+type Kind = "record" | "upload" | "tts";
 
 export default function VoicemailLibrary({
   drops,
-  usage,
+  campaigns,
+  people,
+  me,
   orgId,
-  canEdit,
+  manager,
 }: {
   drops: VoicemailDrop[];
-  usage: Record<string, string[]>;
+  campaigns: { id: string; name: string }[];
+  people: Record<string, string>;
+  me: string;
   orgId: string;
-  canEdit: boolean;
+  manager: boolean;
 }) {
   const router = useRouter();
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [name, setName] = useState("");
+  const [campaignId, setCampaignId] = useState("");
+  const [shared, setShared] = useState(false);
+  const [kind, setKind] = useState<Kind>("record");
+  const [audio, setAudio] = useState<{ blob: Blob; seconds: number; url: string; ext: string } | null>(null);
+  const [message, setMessage] = useState("");
+  const [voice, setVoice] = useState("Polly.Amy-Neural");
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rec = useRef<WavRecorder | null>(null);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function edit(d: VoicemailDrop) {
-    setDraft({ ...d, message: d.message ?? "" });
-    setFile(null);
+  async function startRecording() {
     setError(null);
+    try {
+      rec.current = new WavRecorder();
+      await rec.current.start();
+      setRecording(true);
+      setElapsed(0);
+      timer.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } catch {
+      setError("Couldn't use the microphone. Allow microphone access for this site and try again.");
+    }
+  }
+
+  async function stopRecording() {
+    if (timer.current) clearInterval(timer.current);
+    setRecording(false);
+    const out = await rec.current?.stop();
+    if (out) setAudio({ ...out, url: URL.createObjectURL(out.blob), ext: "wav" });
+  }
+
+  function pickFile(file: File | undefined) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return setError("Recordings must be under 5 MB.");
+    const url = URL.createObjectURL(file);
+    const el = new Audio(url);
+    el.onloadedmetadata = () =>
+      setAudio({ blob: file, seconds: el.duration, url, ext: file.name.toLowerCase().endsWith(".wav") ? "wav" : "mp3" });
   }
 
   async function save() {
-    if (!draft) return;
-    if (!draft.name.trim()) return setError("Give the voicemail a name.");
-    if (draft.kind === "tts" && !draft.message.trim()) return setError("Type the message the AI voice will read.");
-    if (draft.kind === "audio" && !file && !draft.audio_path) return setError("Choose an MP3 or WAV recording.");
-    if (file && file.size > 5 * 1024 * 1024) return setError("Recordings must be under 5 MB.");
-
-    setBusy(true);
     setError(null);
+    if (!name.trim()) return setError("Give the message a name.");
+    if (kind === "tts" && !message.trim()) return setError("Type what the AI voice should say.");
+    if (kind !== "tts" && !audio) return setError(kind === "record" ? "Record your message first." : "Choose an MP3 or WAV file.");
+    setBusy(true);
     const supabase = createClient();
-    let audioPath = draft.audio_path;
-    const oldAudio = draft.audio_path;
-
-    if (draft.kind === "audio" && file) {
-      const ext = file.name.toLowerCase().endsWith(".wav") ? "wav" : "mp3";
-      audioPath = `${orgId}/${crypto.randomUUID()}.${ext}`;
-      const { error: upErr } = await supabase.storage
+    let audioPath: string | null = null;
+    if (kind !== "tts" && audio) {
+      audioPath = `${orgId}/${me}/${crypto.randomUUID()}.${audio.ext}`;
+      const { error: up } = await supabase.storage
         .from("voicemails")
-        .upload(audioPath, file, { contentType: file.type || (ext === "wav" ? "audio/wav" : "audio/mpeg") });
-      if (upErr) {
+        .upload(audioPath, audio.blob, { contentType: audio.ext === "wav" ? "audio/wav" : "audio/mpeg" });
+      if (up) {
         setBusy(false);
-        return setError(upErr.message);
+        return setError(up.message);
       }
     }
-
-    if (draft.is_default) {
-      // Only one default per company.
-      await supabase.from("voicemail_drops").update({ is_default: false }).eq("is_default", true).neq("id", draft.id ?? "00000000-0000-0000-0000-000000000000");
-    }
-
-    const row = {
-      name: draft.name.trim(),
-      kind: draft.kind,
-      message: draft.kind === "tts" ? draft.message.trim() : null,
-      tts_voice: draft.tts_voice,
-      audio_path: draft.kind === "audio" ? audioPath : null,
-      is_default: draft.is_default,
-    };
-    const { error } = draft.id
-      ? await supabase.from("voicemail_drops").update(row).eq("id", draft.id)
-      : await supabase.from("voicemail_drops").insert(row);
+    const { error: insErr } = await supabase.from("voicemail_drops").insert({
+      name: name.trim(),
+      kind: kind === "tts" ? "tts" : "audio",
+      message: kind === "tts" ? message.trim() : null,
+      tts_voice: voice,
+      audio_path: audioPath,
+      campaign_id: campaignId || null,
+      shared,
+      owner_id: me,
+      duration_seconds: kind === "tts" ? null : Math.round((audio?.seconds ?? 0) * 10) / 10,
+    });
     setBusy(false);
-    if (error) return setError(error.message);
-
-    // Tidy up a replaced recording.
-    if (oldAudio && oldAudio !== row.audio_path) await supabase.storage.from("voicemails").remove([oldAudio]);
-    setDraft(null);
-    setFile(null);
+    if (insErr) return setError(insErr.message);
+    setName("");
+    setAudio(null);
+    setMessage("");
+    setShared(false);
     router.refresh();
   }
 
   async function remove(d: VoicemailDrop) {
-    const used = usage[d.id]?.length ?? 0;
-    const warn = used ? ` It is used by ${used} campaign${used > 1 ? "s" : ""}, which will fall back to your default.` : "";
-    if (!window.confirm(`Delete “${d.name}”?${warn}`)) return;
+    if (!window.confirm(`Remove “${d.name}”?`)) return;
     const supabase = createClient();
-    const { error } = await supabase.from("voicemail_drops").delete().eq("id", d.id);
-    if (error) return setError(error.message);
+    const { error: delErr } = await supabase.from("voicemail_drops").delete().eq("id", d.id);
+    if (delErr) return setError(delErr.message);
     if (d.audio_path) await supabase.storage.from("voicemails").remove([d.audio_path]);
     router.refresh();
   }
 
-  if (draft) {
-    return (
-      <div className="card space-y-4">
-        <h2 className="font-semibold">{draft.id ? "Edit voicemail" : "New voicemail"}</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+  const campaignName = (id: string | null) => (id ? campaigns.find((c) => c.id === id)?.name ?? "—" : "Any campaign");
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-3">
+      <div className="xl:col-span-2">
+        <div className="card overflow-x-auto p-0">
+          <table className="w-full">
+            <thead className="border-b border-slate-200">
+              <tr>
+                <th className="th">Message</th>
+                <th className="th">Belongs to</th>
+                <th className="th">Campaign</th>
+                <th className="th">Listen</th>
+                <th className="th" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {drops.length === 0 ? (
+                <tr><td colSpan={5} className="td py-10 text-center text-slate-500">No messages yet. Record one on the right.</td></tr>
+              ) : (
+                drops.map((d) => (
+                  <tr key={d.id}>
+                    <td className="td">
+                      <div className="font-medium">{d.name}</div>
+                      <div className="text-xs text-slate-500">
+                        {d.created_at && new Date(d.created_at).toLocaleString("en-IE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {d.duration_seconds ? ` · ${Math.round(d.duration_seconds)}s` : ""}
+                        {d.kind === "tts" ? ` · AI voice (${voiceName(d.tts_voice)})` : ""}
+                      </div>
+                    </td>
+                    <td className="td">{d.shared ? "Everyone" : people[d.owner_id ?? ""] ?? "—"}</td>
+                    <td className="td">{campaignName(d.campaign_id)}</td>
+                    <td className="td">
+                      {d.kind === "audio" && d.audio_path ? (
+                        <audio controls preload="none" className="h-9 w-56" src={voicemailAudioUrl(d.audio_path)} />
+                      ) : (
+                        <span className="line-clamp-2 max-w-xs text-xs text-slate-600">{d.message}</span>
+                      )}
+                    </td>
+                    <td className="td text-right">
+                      {(manager || d.owner_id === me) && (
+                        <button className="text-xs text-red-700 hover:underline" onClick={() => remove(d)}>Remove</button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          In the dialler, wait for the beep, then click Drop voicemail (or press V). Your own message for the campaign is offered first, then shared ones.
+        </p>
+      </div>
+
+      <div className="space-y-5">
+        <section className="card space-y-4">
+          <h2 className="font-semibold">New message</h2>
           <div>
             <label className="label" htmlFor="vm-name">Name</label>
-            <input id="vm-name" className="input" value={draft.name} placeholder="e.g. Renewal reminder"
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <input id="vm-name" className="input" placeholder="e.g. Intro, short" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <fieldset>
-            <legend className="label">Type</legend>
-            <div className="flex gap-2">
-              {(["tts", "audio"] as const).map((k) => (
-                <label key={k} className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-sm ${draft.kind === k ? "border-brand bg-indigo-50 font-medium text-brand" : "border-slate-300"}`}>
-                  <input type="radio" name="vm-kind" className="sr-only" checked={draft.kind === k} onChange={() => setDraft({ ...draft, kind: k })} />
-                  {k === "tts" ? "AI voice reads a message" : "Upload a recording"}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        </div>
+          <div>
+            <label className="label" htmlFor="vm-campaign">Campaign</label>
+            <select id="vm-campaign" className="input" value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
+              <option value="">Any campaign</option>
+              {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
+            Shared message for all agents on this campaign
+          </label>
 
-        {draft.kind === "tts" ? (
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="label" htmlFor="vm-msg">Message</label>
-              <textarea id="vm-msg" className="input" rows={4} value={draft.message}
-                placeholder="Hi {{first_name}}, it's Sarah from Acme. Sorry I missed you. I'll try you again later, or you can reach us on …"
-                onChange={(e) => setDraft({ ...draft, message: e.target.value })} />
-              <p className="mt-1 text-xs text-slate-500">{"{{first_name}}"}, {"{{last_name}}"} and {"{{company}}"} are filled in for each contact.</p>
-            </div>
-            <div>
-              <label className="label" htmlFor="vm-voice">Voice</label>
-              <select id="vm-voice" className="input" value={draft.tts_voice} onChange={(e) => setDraft({ ...draft, tts_voice: e.target.value })}>
+          <div className="flex flex-wrap items-center gap-3">
+            {kind !== "tts" && (
+              recording ? (
+                <button className="btn-danger" onClick={stopRecording}>■ Stop · {elapsed}s</button>
+              ) : (
+                <button className="btn-danger" onClick={() => { setKind("record"); void startRecording(); }}>● Record</button>
+              )
+            )}
+            <span className="text-sm text-slate-500">or</span>
+            <label className="cursor-pointer text-sm font-medium text-brand hover:underline">
+              upload an MP3 or WAV
+              <input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only"
+                onChange={(e) => { setKind("upload"); pickFile(e.target.files?.[0]); }} />
+            </label>
+            <button type="button" className="text-sm text-slate-600 underline" onClick={() => { setKind(kind === "tts" ? "record" : "tts"); setAudio(null); }}>
+              {kind === "tts" ? "record instead" : "or let the AI voice say it"}
+            </button>
+          </div>
+
+          {kind === "tts" ? (
+            <div className="space-y-2">
+              <textarea className="input" rows={4} aria-label="Message for the AI voice" value={message} onChange={(e) => setMessage(e.target.value)}
+                placeholder="Hi {{first_name}}, it's Sarah from Acme. Sorry I missed you…" />
+              <select className="input" aria-label="Voice" value={voice} onChange={(e) => setVoice(e.target.value)}>
                 {VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
               </select>
             </div>
-          </div>
-        ) : (
-          <div>
-            <label className="label" htmlFor="vm-file">Recording (MP3 or WAV, under 5 MB)</label>
-            {draft.audio_path && !file && (
-              <audio controls preload="none" className="mb-2 w-full max-w-md" src={voicemailAudioUrl(draft.audio_path)} />
-            )}
-            <input id="vm-file" type="file" accept="audio/mpeg,audio/mp3,audio/wav,.mp3,.wav"
-              className="block text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            <p className="mt-1 text-xs text-slate-500">Record on your phone’s voice recorder, then upload. A recording plays the same for every contact.</p>
-          </div>
-        )}
+          ) : (
+            audio && <audio controls className="w-full" src={audio.url} />
+          )}
 
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={draft.is_default} onChange={(e) => setDraft({ ...draft, is_default: e.target.checked })} />
-          Default voicemail (used by campaigns that don’t pick one)
-        </label>
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          <button className="btn" onClick={save} disabled={busy || recording}>{busy ? "Saving…" : "Save message"}</button>
+        </section>
 
-        {error && <p className="text-sm text-red-700">{error}</p>}
-        <div className="flex gap-2">
-          <button className="btn" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save voicemail"}</button>
-          <button className="btn-secondary" onClick={() => { setDraft(null); setError(null); }}>Cancel</button>
-        </div>
+        <section className="card text-sm text-slate-600">
+          <strong className="text-slate-800">Tips for a message that gets callbacks:</strong> keep it under 25 seconds, say your name and company early,
+          give one reason to call back, and say the number slowly twice. Smile while you record.
+        </section>
       </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {canEdit && <button className="btn" onClick={() => setDraft(blank(drops.length === 0))}>New voicemail</button>}
-      {error && <p className="text-sm text-red-700">{error}</p>}
-      {drops.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-          No voicemails yet. Add one so agents can drop it with one click when they reach an answering machine.
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {drops.map((d) => (
-            <section key={d.id} className="card">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">
-                    {d.name}
-                    {d.is_default && <span className="badge ml-2 bg-indigo-100 text-indigo-800">default</span>}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    {d.kind === "audio" ? "Recording" : `AI voice · ${voiceName(d.tts_voice)}`}
-                    {usage[d.id]?.length ? ` · used by ${usage[d.id].join(", ")}` : ""}
-                  </p>
-                </div>
-                {canEdit && (
-                  <div className="flex shrink-0 gap-2">
-                    <button className="btn-secondary px-3 py-1.5" onClick={() => edit(d)}>Edit</button>
-                    <button className="btn-secondary px-3 py-1.5" onClick={() => remove(d)}>Delete</button>
-                  </div>
-                )}
-              </div>
-              {d.kind === "audio" && d.audio_path ? (
-                <audio controls preload="none" className="mt-3 w-full" src={voicemailAudioUrl(d.audio_path)} />
-              ) : (
-                <p className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{d.message}</p>
-              )}
-            </section>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

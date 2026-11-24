@@ -1,13 +1,19 @@
 import Link from "next/link";
 import BroadcastLauncher from "@/components/BroadcastLauncher";
 import CampaignFieldEditor from "@/components/CampaignFieldEditor";
+import CampaignForm from "@/components/CampaignForm";
+import { twilioNumbers } from "@/lib/twilio";
 import { Badge, Empty, PageHeader } from "@/components/ui";
 import { isManager, requireProfile } from "@/lib/auth";
 import type { Campaign } from "@/lib/types";
 
 export default async function AiCallerPage() {
   const { supabase, profile } = await requireProfile();
-  const { data } = await supabase.from("campaigns").select("*").eq("mode", "broadcast").order("created_at", { ascending: false });
+  const [{ data }, { data: templates }, numbers] = await Promise.all([
+    supabase.from("campaigns").select("*").eq("mode", "broadcast").order("created_at", { ascending: false }),
+    supabase.from("scorecard_templates").select("id, name"),
+    twilioNumbers(),
+  ]);
   const campaigns = (data ?? []) as Campaign[];
   const manager = isManager(profile);
 
@@ -30,7 +36,6 @@ export default async function AiCallerPage() {
         title="AI caller"
         subtitle="Automated calls where an AI voice delivers your message. Listeners can press 1 for a call back or 9 to opt out."
       >
-        {manager && <Link href="/campaigns/new?mode=broadcast" className="btn">New AI caller campaign</Link>}
       </PageHeader>
 
       <p className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -61,6 +66,11 @@ export default async function AiCallerPage() {
               </div>
             </section>
           ))}
+        </div>
+      )}
+      {manager && (
+        <div className="mt-8">
+          <CampaignForm templates={templates ?? []} numbers={numbers} defaultMode="broadcast" />
         </div>
       )}
     </>

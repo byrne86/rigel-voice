@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+// Sign-in providers switched on in Supabase, e.g. "azure,google".
+const PROVIDERS = (process.env.NEXT_PUBLIC_OAUTH_PROVIDERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -15,6 +18,18 @@ export default function LoginPage() {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
 
+  async function oauth(provider: "azure" | "google") {
+    setMessage(null);
+    const { error } = await createClient().auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: provider === "azure" ? "email openid profile" : undefined,
+      },
+    });
+    if (error) setMessage(error.message);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -24,6 +39,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
       if (error) setMessage(error.message);
       else {
+        await fetch("/api/activity", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "signed_in" }) });
         router.push("/");
         router.refresh();
       }
@@ -100,6 +116,17 @@ export default function LoginPage() {
             {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
           </button>
         </form>
+        {PROVIDERS.length > 0 && (
+          <div className="mt-5 space-y-2 border-t border-slate-200 pt-5">
+            {PROVIDERS.includes("azure") && (
+              <button className="btn-secondary w-full" onClick={() => oauth("azure")}>Continue with Microsoft</button>
+            )}
+            {PROVIDERS.includes("google") && (
+              <button className="btn-secondary w-full" onClick={() => oauth("google")}>Continue with Google</button>
+            )}
+            <p className="text-center text-xs text-slate-500">New here? Signing in this way creates your account, or joins your team if you were invited.</p>
+          </div>
+        )}
         <button
           className="mt-4 text-sm text-slate-600 hover:text-slate-900"
           onClick={() => {

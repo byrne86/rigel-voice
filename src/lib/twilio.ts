@@ -56,3 +56,14 @@ export function isTwilioRecordingUrl(url: string | null | undefined): url is str
     return false;
   }
 }
+
+/** Phone numbers on the Twilio account, for caller-ID choices. Empty if Twilio isn't set up yet. */
+export async function twilioNumbers(): Promise<{ number: string; name: string }[]> {
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) return [];
+  try {
+    const list = await twilioClient().incomingPhoneNumbers.list({ limit: 100 });
+    return list.map((n) => ({ number: n.phoneNumber, name: n.friendlyName }));
+  } catch {
+    return [];
+  }
+}

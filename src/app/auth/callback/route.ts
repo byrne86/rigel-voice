@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { logActivity } from "@/lib/activity";
 
 /** Where the confirmation email link lands: finishes sign-in, then opens the app. */
 export async function GET(request: NextRequest) {
@@ -15,6 +16,14 @@ export async function GET(request: NextRequest) {
     ok = !(await supabase.auth.exchangeCodeForSession(code)).error;
   } else if (tokenHash && type) {
     ok = !(await supabase.auth.verifyOtp({ token_hash: tokenHash, type })).error;
+  }
+
+  if (ok) {
+    const { data } = await supabase.auth.getUser();
+    if (data.user) {
+      const { data: p } = await supabase.from("profiles").select("org_id").eq("id", data.user.id).maybeSingle();
+      if (p) await logActivity(p.org_id, data.user.id, "signed_in", { via: code ? "link or provider" : "email link" });
+    }
   }
 
   const dest = url.clone();

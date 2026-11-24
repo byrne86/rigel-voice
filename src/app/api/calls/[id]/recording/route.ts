@@ -9,7 +9,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!isUuid(id)) return new Response("Not found", { status: 404 });
 
   // Row level security means this only finds calls in the user's own organisation.
-  const { data: call } = await ctx.supabase.from("calls").select("recording_url").eq("id", id).single();
+  const { data: call } = await ctx.supabase.from("calls").select("recording_url, recording_storage_path").eq("id", id).single();
+  if (call?.recording_storage_path) {
+    // Uploaded recording: hand out a short-lived private link.
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const { data: signed } = await createAdminClient().storage.from("recordings").createSignedUrl(call.recording_storage_path, 300);
+    return signed?.signedUrl ? Response.redirect(signed.signedUrl, 302) : new Response("Not found", { status: 404 });
+  }
   if (!isTwilioRecordingUrl(call?.recording_url)) return new Response("Not found", { status: 404 });
 
   const auth = Buffer.from(

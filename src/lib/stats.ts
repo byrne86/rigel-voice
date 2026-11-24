@@ -140,3 +140,7 @@ export function csv(v: unknown) {
   const s = v === null || v === undefined ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+
+export function nowIso() {
+  return new Date().toISOString();
+}
