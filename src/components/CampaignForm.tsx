@@ -3,21 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Campaign, ScorecardTemplate } from "@/lib/types";
+import Link from "next/link";
+import { VOICES, type Campaign, type ScorecardTemplate, type VoicemailDrop } from "@/lib/types";
 
-const VOICES = [
-  { value: "Polly.Amy-Neural", label: "Amy (British English, female)" },
-  { value: "Polly.Brian-Neural", label: "Brian (British English, male)" },
-  { value: "Polly.Niamh-Neural", label: "Niamh (Irish English, female)" },
-  { value: "Polly.Joanna-Neural", label: "Joanna (US English, female)" },
-  { value: "Polly.Matthew-Neural", label: "Matthew (US English, male)" },
-];
+
 
 export default function CampaignForm({
   campaign,
   templates,
   defaultMode = "agent",
+  drops = [],
 }: {
+  drops?: Pick<VoicemailDrop, "id" | "name" | "is_default">[];
   defaultMode?: "agent" | "broadcast";
   campaign?: Campaign;
   templates: Pick<ScorecardTemplate, "id" | "name">[];
@@ -29,7 +26,7 @@ export default function CampaignForm({
     status: campaign?.status ?? "draft",
     caller_id: campaign?.caller_id ?? "",
     script: campaign?.script ?? "",
-    voicemail_message: campaign?.voicemail_message ?? "",
+    voicemail_drop_id: campaign?.voicemail_drop_id ?? "",
     broadcast_message: campaign?.broadcast_message ?? "",
     tts_voice: campaign?.tts_voice ?? "Polly.Amy-Neural",
     max_attempts: campaign?.max_attempts ?? 3,
@@ -57,6 +54,7 @@ export default function CampaignForm({
       caller_id: f.caller_id.trim() || null,
       default_country: f.default_country.trim().toUpperCase() || "IE",
       scorecard_template_id: f.scorecard_template_id || null,
+      voicemail_drop_id: f.voicemail_drop_id || null,
     };
     if (campaign) {
       const { error } = await supabase.from("campaigns").update(row).eq("id", campaign.id);
@@ -149,9 +147,16 @@ export default function CampaignForm({
               placeholder="Shown to agents on the dialer, and given to the AI as context when scoring." />
           </div>
           <div>
-            <label className="label">Voicemail drop message (spoken by the AI voice)</label>
-            <textarea className="input min-h-20" value={f.voicemail_message} onChange={set("voicemail_message")}
-              placeholder="Hi {{first_name}}, this is Sarah from Acme. Sorry I missed you…" />
+            <label className="label" htmlFor="vm-drop">Voicemail drop</label>
+            <select id="vm-drop" className="input" value={f.voicemail_drop_id} onChange={set("voicemail_drop_id")}>
+              <option value="">{drops.find((d) => d.is_default) ? `Company default (${drops.find((d) => d.is_default)?.name})` : "None"}</option>
+              {drops.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Left when an agent clicks “Drop voicemail”. Create and record them under <Link href="/voicemails" className="text-brand underline">Voicemails</Link>.
+            </p>
           </div>
         </>
       ) : (

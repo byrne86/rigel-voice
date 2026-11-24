@@ -2,13 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Call, Device } from "@twilio/voice-sdk";
-import { contactName, DISPOSITIONS, formatDuration, type Campaign, type Contact } from "@/lib/types";
+import { contactName, DISPOSITIONS, formatDuration, type Campaign, type Contact, type VoicemailDrop } from "@/lib/types";
 
 type Phase = "idle" | "loading" | "dialing" | "live" | "wrapup" | "finished";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 
-export default function Dialer({ campaigns, initialCampaignId }: { campaigns: Campaign[]; initialCampaignId?: string }) {
+export default function Dialer({
+  campaigns,
+  drops,
+  initialCampaignId,
+}: {
+  campaigns: Campaign[];
+  drops: VoicemailDrop[];
+  initialCampaignId?: string;
+}) {
   const [campaignId, setCampaignId] = useState(
     campaigns.find((c) => c.id === initialCampaignId)?.id ?? campaigns[0]?.id ?? "",
   );
@@ -26,7 +34,10 @@ export default function Dialer({ campaigns, initialCampaignId }: { campaigns: Ca
   const [notes, setNotes] = useState("");
   const [callbackAt, setCallbackAt] = useState("");
   const [saving, setSaving] = useState(false);
-  const [dropped, setDropped] = useState(false);
+  const [dropped, setDropped] = useState<string | null>(null);
+  const [dropChoice, setDropChoice] = useState("");
+  const defaultDropId = campaign?.voicemail_drop_id ?? drops.find((d) => d.is_default)?.id ?? "";
+  const selectedDrop = dropChoice || defaultDropId;
   const [done, setDone] = useState(0);
 
   const deviceRef = useRef<Device | null>(null);
@@ -84,7 +95,8 @@ export default function Dialer({ campaigns, initialCampaignId }: { campaigns: Ca
     setPhase("loading");
     setSeconds(0);
     setMuted(false);
-    setDropped(false);
+    setDropped(null);
+    setDropChoice("");
     setDisposition("");
     setNotes("");
     setCallbackAt("");
@@ -155,13 +167,17 @@ export default function Dialer({ campaigns, initialCampaignId }: { campaigns: Ca
 
   async function voicemailDrop() {
     if (!current) return;
-    const res = await fetch(`/api/calls/${current.callId}/voicemail-drop`, { method: "POST" });
+    const res = await fetch(`/api/calls/${current.callId}/voicemail-drop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dropId: selectedDrop || null }),
+    });
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "Could not drop voicemail");
       return;
     }
-    setDropped(true);
+    setDropped(json.drop ?? "Voicemail");
     setDisposition("voicemail");
   }
 
@@ -282,10 +298,24 @@ export default function Dialer({ campaigns, initialCampaignId }: { campaigns: Ca
                     <button className="btn-secondary" onClick={toggleMute} disabled={phase !== "live"}>
                       {muted ? "Unmute" : "Mute"}
                     </button>
-                    {campaign?.voicemail_message && (
-                      <button className="btn-secondary" onClick={voicemailDrop} disabled={phase !== "live" || dropped}>
-                        {dropped ? "Voicemail dropped" : "Drop voicemail"}
-                      </button>
+                    {drops.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <label className="sr-only" htmlFor="drop-choice">Voicemail to leave</label>
+                        <select
+                          id="drop-choice"
+                          className="input w-auto py-2"
+                          value={selectedDrop}
+                          disabled={!!dropped}
+                          onChange={(e) => setDropChoice(e.target.value)}
+                        >
+                          {drops.map((d) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                        <button className="btn-secondary" onClick={voicemailDrop} disabled={phase !== "live" || !!dropped}>
+                          {dropped ? `Left: ${dropped}` : "Drop voicemail"}
+                        </button>
+                      </div>
                     )}
                   </div>
                   {phase === "live" && (

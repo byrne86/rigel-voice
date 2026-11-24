@@ -17,8 +17,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
   if (!campaign) notFound();
   const c = campaign as Campaign;
 
-  const [{ data: templates }, { data: contacts }, ...counts] = await Promise.all([
+  const [{ data: templates }, { data: drops }, { data: contacts }, ...counts] = await Promise.all([
     supabase.from("scorecard_templates").select("id, name").order("created_at"),
+    supabase.from("voicemail_drops").select("id, name, is_default").order("name"),
     supabase.from("contacts").select("*").eq("campaign_id", id).order("created_at", { ascending: false }).limit(100),
     ...STATUSES.map((s) =>
       supabase.from("contacts").select("id", { count: "exact", head: true }).eq("campaign_id", id).eq("status", s),
@@ -58,7 +59,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
       {manager && (
         <>
           <h2 className="mb-3 mt-8 text-lg font-semibold">Settings</h2>
-          <CampaignForm campaign={c} templates={templates ?? []} />
+          <CampaignForm campaign={c} templates={templates ?? []} drops={drops ?? []} />
         </>
       )}
 

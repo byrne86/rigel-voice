@@ -49,6 +49,7 @@ export interface Campaign {
   record_calls: boolean;
   default_country: string;
   scorecard_template_id: string | null;
+  voicemail_drop_id: string | null;
   created_at: string;
 }
 
@@ -114,4 +115,31 @@ export function formatDuration(seconds: number | null | undefined) {
 
 export function daysAgoIso(days: number) {
   return new Date(Date.now() - days * 24 * 3600_000).toISOString();
+}
+
+export interface VoicemailDrop {
+  id: string;
+  name: string;
+  kind: "tts" | "audio";
+  message: string | null;
+  tts_voice: string;
+  audio_path: string | null;
+  is_default: boolean;
+}
+
+export const VOICES = [
+  { value: "Polly.Amy-Neural", label: "Amy (British English, female)" },
+  { value: "Polly.Brian-Neural", label: "Brian (British English, male)" },
+  { value: "Polly.Niamh-Neural", label: "Niamh (Irish English, female)" },
+  { value: "Polly.Joanna-Neural", label: "Joanna (US English, female)" },
+  { value: "Polly.Matthew-Neural", label: "Matthew (US English, male)" },
+];
+
+export function voiceName(v: string) {
+  return v.replace("Polly.", "").replace("-Neural", "");
+}
+
+/** Public link to a recorded voicemail in Supabase Storage. */
+export function voicemailAudioUrl(path: string) {
+  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/voicemails/${path}`;
 }

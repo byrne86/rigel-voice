@@ -351,3 +351,41 @@ alter table public.scorecards add column if not exists passed boolean;
 alter table public.scorecards add column if not exists objections jsonb not null default '[]'::jsonb;
 alter table public.scorecards add column if not exists agent_talk_ratio numeric;
 create index if not exists scorecards_org_created_idx on public.scorecards (org_id, created_at desc);
+
+create table if not exists public.voicemail_drops (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null default public.current_org_id() references public.organizations on delete cascade,
+  name text not null,
+  kind text not null default 'tts' check (kind in ('tts', 'audio')),
+  message text,
+  tts_voice text not null default 'Polly.Amy-Neural',
+  audio_path text,
+  is_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  check (kind = 'audio' or message is not null),
+  check (kind = 'tts' or audio_path is not null)
+);
+create unique index if not exists voicemail_drops_one_default on public.voicemail_drops (org_id) where is_default;
+
+alter table public.voicemail_drops enable row level security;
+drop policy if exists voicemail_drops_read on public.voicemail_drops;
+create policy voicemail_drops_read on public.voicemail_drops for select using (org_id = public.current_org_id());
+drop policy if exists voicemail_drops_write on public.voicemail_drops;
+create policy voicemail_drops_write on public.voicemail_drops for all
+  using (org_id = public.current_org_id() and public.is_manager())
+  with check (org_id = public.current_org_id() and public.is_manager());
+
+alter table public.campaigns add column if not exists voicemail_drop_id uuid references public.voicemail_drops on delete set null;
+alter table public.calls add column if not exists voicemail_drop_id uuid references public.voicemail_drops on delete set null;
+
+-- Storage for recorded voicemails. Files live under <org id>/..., readable by link (Twilio plays them).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('voicemails', 'voicemails', true, 5242880, array['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave'])
+on conflict (id) do nothing;
+
+drop policy if exists voicemails_upload on storage.objects;
+create policy voicemails_upload on storage.objects for insert to authenticated
+  with check (bucket_id = 'voicemails' and (storage.foldername(name))[1] = public.current_org_id()::text and public.is_manager());
+drop policy if exists voicemails_delete on storage.objects;
+create policy voicemails_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'voicemails' and (storage.foldername(name))[1] = public.current_org_id()::text and public.is_manager());
