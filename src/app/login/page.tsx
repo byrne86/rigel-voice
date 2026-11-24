@@ -32,6 +32,7 @@ export default function LoginPage() {
         email: form.email,
         password: form.password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             full_name: form.fullName,
             org_name: joining ? "" : form.orgName,
