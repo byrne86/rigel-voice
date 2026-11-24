@@ -29,7 +29,7 @@ export default async function ActivityPage() {
 
   return (
     <>
-      <PageHeader title="Activity log" subtitle="Sign-ins and changes in your company, newest first">
+      <PageHeader title="Who did what" subtitle="Sign-ins and changes across your team, newest first.">
         <Link href="/settings" className="btn-secondary">Back to settings</Link>
       </PageHeader>
       <div className="card overflow-x-auto p-0">

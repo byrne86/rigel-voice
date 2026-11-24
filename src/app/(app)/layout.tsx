@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         org={profile.organizations?.name ?? ""}
         role={profile.role === "owner" ? "Admin" : profile.role}
       />
-      <main className="flex-1 overflow-x-hidden p-5 md:p-8">
+      <main className="flex-1 overflow-x-hidden px-5 py-6 md:px-10 md:py-8">
         <div className="mx-auto max-w-7xl">{children}</div>
       </main>
     </div>

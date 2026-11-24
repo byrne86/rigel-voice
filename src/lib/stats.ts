@@ -75,12 +75,14 @@ export function summarise(calls: CallRow[]) {
   };
 }
 
-/** Scorecard criteria ranked from lowest average achievement. */
+/** Scorecard criteria ranked from lowest average achievement, with a per-agent breakdown. */
 export function coachingOpportunities(
   calls: CallRow[],
   templates: Map<string, { name: string; critical: Set<string> }>,
+  agentNames: Map<string, string> = new Map(),
 ) {
-  const agg = new Map<string, { name: string; template: string; critical: boolean; sum: number; n: number; missed: number }>();
+  type Agg = { name: string; template: string; critical: boolean; sum: number; n: number; missed: number; agents: Map<string, { sum: number; n: number }> };
+  const agg = new Map<string, Agg>();
   for (const c of calls) {
     const s = scoreOf(c);
     if (!s?.results) continue;
@@ -88,22 +90,39 @@ export function coachingOpportunities(
     for (const r of s.results) {
       if (!r.max_points) continue;
       const key = `${s.template_id}:${r.criterion_id}`;
-      const row = agg.get(key) ?? {
+      const row: Agg = agg.get(key) ?? {
         name: r.name,
         template: t?.name ?? "",
         critical: t?.critical.has(r.criterion_id) ?? false,
         sum: 0,
         n: 0,
         missed: 0,
+        agents: new Map(),
       };
-      row.sum += r.score / r.max_points;
+      const pct = r.score / r.max_points;
+      row.sum += pct;
       row.n++;
-      if (r.score < r.max_points / 2) row.missed++;
+      if (pct < 0.5) row.missed++;
+      if (c.agent_id) {
+        const a = row.agents.get(c.agent_id) ?? { sum: 0, n: 0 };
+        a.sum += pct;
+        a.n++;
+        row.agents.set(c.agent_id, a);
+      }
       agg.set(key, row);
     }
   }
   return [...agg.values()]
-    .map((r) => ({ ...r, achievement: (r.sum / r.n) * 100 }))
+    .map((r) => ({
+      name: r.name,
+      template: r.template,
+      critical: r.critical,
+      missed: r.missed,
+      achievement: (r.sum / r.n) * 100,
+      agents: [...r.agents.entries()]
+        .map(([id, a]) => ({ name: agentNames.get(id) ?? "Agent", achievement: (a.sum / a.n) * 100, calls: a.n }))
+        .sort((x, y) => x.achievement - y.achievement),
+    }))
     .sort((a, b) => a.achievement - b.achievement || b.missed - a.missed);
 }
 

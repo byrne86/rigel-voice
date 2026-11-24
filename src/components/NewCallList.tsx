@@ -83,7 +83,7 @@ export default function NewCallList({
       if (!res.ok) throw new Error(json.error ?? "Could not create the list");
       setMessage({
         ok: true,
-        text: `List created with ${json.imported} contacts. Skipped ${json.invalid} invalid numbers and ${json.duplicates} already in this campaign.`,
+        text: `Added ${json.imported} people. Left out ${json.invalid} numbers that weren't valid and ${json.duplicates} already in this campaign.`,
       });
       setFile(null);
       setName("");
@@ -96,11 +96,11 @@ export default function NewCallList({
 
   return (
     <form onSubmit={create} className="card space-y-4">
-      <h2 className="font-semibold">New call list</h2>
+      <h2 className="text-lg font-bold text-night">Add a call list</h2>
       <div className="flex gap-2" role="tablist">
         {([["crm", "From Rigel CRM"], ["upload", "Upload Excel or CSV"]] as const).map(([k, label]) => (
           <button type="button" key={k} role="tab" aria-selected={source === k} onClick={() => setSource(k)}
-            className={`rounded-full border px-3 py-1 text-sm ${source === k ? "border-brand bg-indigo-50 font-medium text-brand" : "border-slate-300 text-slate-600"}`}>
+            className={`rounded-full border px-3 py-1 text-sm ${source === k ? "border-brand bg-brand/5 font-medium text-brand" : "border-slate-300 text-slate-600"}`}>
             {label}
           </button>
         ))}
@@ -108,7 +108,7 @@ export default function NewCallList({
 
       {source === "crm" ? (
         <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Pulling lists straight from Rigel CRM is coming next. For now, export the contacts from the CRM and upload the file.
+          Lists straight from Rigel CRM are on the way. Until then, export your contacts from the CRM and upload the file here.
         </p>
       ) : (
         <>
@@ -116,12 +116,12 @@ export default function NewCallList({
             <label className="label" htmlFor="file">File</label>
             <input id="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="block text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            <p className="mt-1 text-xs text-slate-500">Columns: phone (required), first_name, last_name, company, email, notes. The first sheet of an Excel file is used.</p>
+            <p className="mt-1 text-xs text-slate-500">Needs a phone column. Name, company, email and notes columns are picked up too. For Excel files we read the first sheet.</p>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="label" htmlFor="list-name">List name</label>
-              <input id="list-name" className="input" placeholder="Defaults to the file name" value={name} onChange={(e) => setName(e.target.value)} />
+              <input id="list-name" className="input" placeholder="Uses the file name if left blank" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div>
               <label className="label" htmlFor="list-campaign">Campaign</label>
@@ -133,13 +133,13 @@ export default function NewCallList({
             <div>
               <label className="label" htmlFor="list-agent">Agent</label>
               <select id="list-agent" className="input" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-                <option value="">Anyone on the team</option>
+                <option value="">Shared with the whole team</option>
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
           </div>
           {message && <p className={`text-sm ${message.ok ? "text-emerald-700" : "text-red-700"}`}>{message.text}</p>}
-          <button className="btn" disabled={busy}>{busy ? "Creating…" : "Create list"}</button>
+          <button className="btn" disabled={busy}>{busy ? "Adding…" : "Add list"}</button>
         </>
       )}
     </form>

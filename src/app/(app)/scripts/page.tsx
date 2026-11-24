@@ -13,14 +13,14 @@ export default async function ScriptsPage() {
     <>
       <PageHeader
         title="Call scripts"
-        subtitle="Each campaign's script powers coaching: a checklist of the call flow, and the approved answer when a prospect raises an objection."
+        subtitle="What agents should say on each campaign. The steps become a tick-list in the dialler, and the AI scores calls against them."
       />
       <div className="card overflow-x-auto p-0">
         <table className="w-full">
           <thead className="border-b border-slate-200">
             <tr>
               <th className="th">Campaign</th>
-              <th className="th">Script</th>
+              <th className="th">Status</th>
               <th className="th text-right">Steps</th>
               <th className="th text-right">Objections</th>
               <th className="th">Approved</th>
@@ -38,7 +38,7 @@ export default async function ScriptsPage() {
                     <td className="td font-medium">{c.name}</td>
                     <td className="td">
                       {!has ? (
-                        <span className="text-slate-400">None yet</span>
+                        <span className="text-slate-400">Not written</span>
                       ) : c.script_status === "approved" ? (
                         <span className="badge bg-emerald-100 text-emerald-800">Approved</span>
                       ) : (
@@ -53,7 +53,7 @@ export default async function ScriptsPage() {
                     <td className="td text-right">
                       {(manager || (has && c.script_status === "approved")) && (
                         <Link href={`/scripts/${c.id}`} className="text-sm font-medium text-brand hover:underline">
-                          {has ? "Open" : "Add script"}
+                          {has ? (manager ? "Edit" : "Read") : "Write script"}
                         </Link>
                       )}
                     </td>
@@ -65,7 +65,7 @@ export default async function ScriptsPage() {
         </table>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Agents only see a script once a manager has approved it. Editing an approved script takes it back to draft until it&apos;s approved again.
+        Agents see a script once you approve it. If you change an approved script, it goes back to draft and agents keep seeing nothing until you approve it again.
       </p>
     </>
   );

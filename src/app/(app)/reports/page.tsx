@@ -8,7 +8,7 @@ import { contactName, dispositionLabel, type ScoreResult } from "@/lib/types";
 
 const TABS = [
   ["summary", "Summary"],
-  ["quality", "Quality checks"],
+  ["quality", "Quality"],
   ["calls", "All calls"],
 ] as const;
 
@@ -30,7 +30,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="Reports" subtitle={`${fmtDay(range.from)} to ${fmtDay(range.to)}, Irish time${isManager(profile) ? "" : " · your calls only"}`}>
-        <a className="btn-secondary" href={`/api/reports/excel?${q}`}>Download Excel</a>
+        <a className="btn-secondary" href={`/api/reports/excel?${q}`}>Export to Excel</a>
       </PageHeader>
       <ReportFilters range={range} base="/reports" campaigns={campaigns ?? []} agents={agents} tab={tab} />
 
@@ -48,8 +48,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       {tab === "calls" && <AllCalls calls={calls} />}
 
       <p className="mt-4 text-xs text-slate-500">
-        Connected means 15 seconds or more; conversations are a minute or more. Reached DM is when the agent clicked Through to decision maker.
-        Scores only cover calls that were recorded and long enough to score.
+        A call counts as connected at 15 seconds and as a conversation at one minute. Decision makers are counted when the agent marks them in the dialler.
+        Only recorded calls long enough to judge get a score.
       </p>
     </>
   );
@@ -87,7 +87,7 @@ function Summary({ calls, s, agents, campaigns }: {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
         <Kpi label="Calls" value={s.calls} hint={`${s.outbound} out, ${s.inbound} in`} />
         <Kpi label="Connected" value={s.connected} />
-        <Kpi label="Reached DM" value={s.reachedDm} hint={`${s.conversations} conversations`} />
+        <Kpi label="Decision makers" value={s.reachedDm} hint={`${s.conversations} conversations`} />
         <Kpi label="Meetings" value={s.meetings} hint={`${s.callbacks} callbacks`} />
         <Kpi label="Talk time" value={formatSeconds(s.talkSeconds)} />
         <Kpi label="Avg score" value={s.avgScore === null ? "—" : `${Math.round(s.avgScore)}%`} hint={s.scored ? `${s.scored} scored calls` : "no scored calls"} />
@@ -114,7 +114,7 @@ function BreakdownTable({ title, rows }: { title: string; rows: { name: string; 
             <th className="th">Name</th>
             <th className="th text-right">Calls</th>
             <th className="th text-right">Connected</th>
-            <th className="th text-right">Reached DM</th>
+            <th className="th text-right">Decision makers</th>
             <th className="th text-right">Meetings</th>
             <th className="th text-right">Talk time</th>
             <th className="th text-right">Avg score</th>
@@ -156,7 +156,7 @@ function Quality({ calls }: { calls: ReportCall[] }) {
   return (
     <div className="grid gap-5 xl:grid-cols-3">
       <section className="card">
-        <h2 className="mb-3 font-semibold">Criteria, lowest first</h2>
+        <h2 className="mb-3 text-lg font-bold text-night">Scorecard points, weakest first</h2>
         <ul className="space-y-3">
           {criteria.map((c) => (
             <li key={c.name}>

@@ -14,31 +14,25 @@ export default async function CampaignsPage() {
     manager ? twilioNumbers() : Promise.resolve([]),
   ]);
   const campaigns = (data ?? []) as Campaign[];
-  const tplName = (id: string | null) => templates?.find((t) => t.id === id)?.name ?? "default scorecard";
+  const tplName = (id: string | null) => templates?.find((t) => t.id === id)?.name ?? templates?.[0]?.name ?? "your scorecard";
 
   return (
     <>
-      <PageHeader title="Campaigns" subtitle="Each campaign sets the caller ID, scorecard, script, recording line and how callbacks are handled." />
+      <PageHeader title="Campaigns" subtitle="A campaign is one calling job: who you ring, the number they see, how calls are marked and what happens when they ring back." />
       <div className="space-y-3">
-        {campaigns.length === 0 && <div className="card text-sm text-slate-500">No campaigns yet. Add your first one below.</div>}
+        {campaigns.length === 0 && <div className="card text-sm text-slate-500">You haven&apos;t set up a campaign yet. Start with the form below.</div>}
         {campaigns.map((c) => (
           <section key={c.id} className="card flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold">
-                {c.name} <Badge>{c.status}</Badge> {c.mode === "broadcast" && <span className="badge bg-indigo-100 text-indigo-800">AI caller</span>}
+                {c.name} <Badge>{c.status}</Badge> {c.mode === "broadcast" && <span className="badge bg-brand/10 text-brand">AI caller</span>}
               </h2>
               <p className="text-sm text-slate-500">
-                {[
-                  c.caller_id ? `calls from ${c.caller_id}` : "account default caller ID",
-                  tplName(c.scorecard_template_id),
-                  LANGUAGES.find((l) => l.value === c.call_language)?.label,
-                  c.ring_agents_on_callback ? "callbacks ring agents" : null,
-                  c.crm_note ? "CRM notes on" : null,
-                  c.is_default_inbound ? "default for unmatched calls" : null,
-                ].filter(Boolean).join(" · ")}
+                Shows {c.caller_id ?? "your main number"}, marked with {tplName(c.scorecard_template_id)}, in {LANGUAGES.find((l) => l.value === c.call_language)?.label ?? "English"}.
+                {c.ring_agents_on_callback ? " Callbacks ring agents." : ""}
               </p>
             </div>
-            {manager && <Link href={`/campaigns/${c.id}`} className="text-sm font-medium text-brand hover:underline">Edit</Link>}
+            {manager && <Link href={`/campaigns/${c.id}`} className="btn-secondary px-3 py-1.5">Open</Link>}
           </section>
         ))}
       </div>
@@ -46,7 +40,7 @@ export default async function CampaignsPage() {
         <div className="mt-8">
           <CampaignForm templates={templates ?? []} numbers={numbers} />
           <p className="mt-2 text-xs text-slate-500">
-            Incoming calls join a campaign by the number they dialled (its caller ID). To take callbacks, set each Twilio number&apos;s “A call comes in” webhook to /api/twilio/inbound.
+            Callbacks are matched to a campaign by the number the person rang. For that to work, point each Twilio number&apos;s incoming-call webhook at /api/twilio/inbound.
           </p>
         </div>
       )}

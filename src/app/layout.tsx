@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/bricolage-grotesque";
+import "@fontsource-variable/figtree";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Rigel Voice",
-  description: "Campaign dialer with AI call scoring",
+  description: "Outbound calling with AI coaching on every call",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

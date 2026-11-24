@@ -250,6 +250,15 @@ export default function Dialer({
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
       if (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if ((phase === "wrapup" || phase === "live") && /^[1-9]$/.test(e.key)) {
+        const d = DISPOSITIONS[Number(e.key) - 1];
+        if (d) setDisposition(d.value);
+        return;
+      }
+      if (phase === "wrapup" && e.key === "Enter" && disposition) {
+        void saveOutcome();
+        return;
+      }
       if (phase !== "live") return;
       if (e.key === "r" || e.key === "R") void markReachedDm();
       if ((e.key === "v" || e.key === "V") && canDrop) void voicemailDrop();
@@ -279,211 +288,262 @@ export default function Dialer({
   const inCall = phase === "dialing" || phase === "live";
   const busy = inCall || phase === "wrapup" || phase === "loading" || countdown !== null;
   const status =
-    phase === "loading" ? "Connecting…"
-    : phase === "dialing" ? "Ringing…"
-    : phase === "live" ? `Live · ${formatDuration(seconds)}`
-    : phase === "wrapup" ? `Call ended · ${formatDuration(seconds)}`
-    : phase === "finished" ? "Nothing left to call in this list right now"
-    : countdown !== null ? `Next call in ${countdown}…`
-    : ready ? "Ready" : "Starting phone…";
+    phase === "loading" ? "Connecting"
+    : phase === "dialing" ? "Ringing"
+    : phase === "live" ? "On the call"
+    : phase === "wrapup" ? "Call ended"
+    : phase === "finished" ? "This list is done for now"
+    : countdown !== null ? `Next call in ${countdown}`
+    : ready ? "Ready" : "Starting your phone";
+  const step = phase === "wrapup" ? 3 : reachedDm ? 2 : inCall ? 1 : 0;
+  const display = current ? (current.contact ? contactName({ ...current.contact, phone: current.number }) : current.number) : number;
+
+  function press(k: string) {
+    if (phase === "live") callRef.current?.sendDigits(k);
+    else if (!busy && mode === "manual") setNumber((n) => n + k);
+  }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-5">
-      <div className="space-y-5 xl:col-span-3">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+      <div className="space-y-5">
         {incoming && (
-          <div className="card flex flex-wrap items-center justify-between gap-3 border-emerald-300 bg-emerald-50" role="alert">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-flare/40 bg-flare/10 p-4" role="alert">
             <div>
-              <div className="text-sm text-emerald-800">Incoming call</div>
-              <div className="text-lg font-semibold">{incoming.customParameters.get("contactName") || incoming.parameters.From}</div>
+              <div className="text-sm text-amber-900">Someone is calling back</div>
+              <div className="font-display text-xl font-bold text-night">{incoming.customParameters.get("contactName") || incoming.parameters.From}</div>
             </div>
             <div className="flex gap-2">
-              <button className="btn bg-emerald-600 hover:bg-emerald-700" onClick={answer}>Answer</button>
+              <button className="btn bg-good hover:brightness-110" onClick={answer}>Answer</button>
               <button className="btn-secondary" onClick={() => { incoming.reject(); setIncoming(null); }}>Decline</button>
             </div>
           </div>
         )}
 
-        <div className="card">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <div className="label">You</div>
-              <div className="input bg-slate-50">{me.name}</div>
+        <section className="overflow-hidden rounded-3xl bg-night text-white shadow-[0_20px_50px_-20px_rgba(18,26,51,.6)]" aria-label="Call console">
+          <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-6 py-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand/40 text-sm font-semibold">
+              {me.name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase()}
             </div>
-            <div>
-              <label className="label" htmlFor="campaign">Campaign</label>
-              <select id="campaign" className="input" value={campaignId} disabled={busy}
-                onChange={(e) => { setCampaignId(e.target.value); setListId(lists.find((l) => l.campaign_id === e.target.value)?.id ?? ""); }}>
-                {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <p className="mt-1 text-xs text-slate-500">Calling from {callerId}</p>
+            <div className="mr-auto">
+              <div className="text-sm font-semibold">{me.name}</div>
+              <div className="text-xs text-slate-400">Calling from {callerId}</div>
             </div>
+            <label className="sr-only" htmlFor="campaign">Campaign</label>
+            <select id="campaign" disabled={busy} value={campaignId}
+              className="rounded-[10px] border border-white/15 bg-white/[0.06] px-3 py-2 text-sm text-white outline-none focus:border-flare [&>option]:text-night"
+              onChange={(e) => { setCampaignId(e.target.value); setListId(lists.find((l) => l.campaign_id === e.target.value)?.id ?? ""); }}>
+              {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </div>
 
-          <div className="mt-5 inline-flex rounded-lg border border-slate-200 p-1" role="tablist">
-            {(["manual", "list"] as const).map((m) => (
-              <button key={m} role="tab" aria-selected={mode === m} disabled={busy}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${mode === m ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
-                onClick={() => setMode(m)}>
-                {m === "manual" ? "Dial a number" : "Work a call list"}
-              </button>
-            ))}
-          </div>
-
-          {mode === "manual" ? (
-            <form onSubmit={dialManual} className="mt-4">
-              <label className="label" htmlFor="number">Number</label>
-              <input id="number" className="input text-base" inputMode="tel" autoComplete="off" disabled={busy}
-                placeholder="087 123 4567 or +44…" value={number} onChange={(e) => setNumber(e.target.value)} />
-              <div className="mt-1 flex justify-between text-xs text-slate-500">
-                <span>Numbers starting 0 are treated as {campaign?.default_country === "GB" ? "UK" : campaign?.default_country === "IE" ? "Irish" : campaign?.default_country}</span>
-                <span>Shows as {callerId}</span>
-              </div>
-              <button className="btn mt-4 w-full bg-emerald-600 py-3 text-base hover:bg-emerald-700" disabled={!ready || busy || !campaignId}>
-                Call
-              </button>
-            </form>
-          ) : (
-            <div className="mt-4">
-              <label className="label" htmlFor="list">Call list</label>
-              {campaignLists.length === 0 ? (
-                <p className="text-sm text-slate-500">No call lists for this campaign yet. Create one under Call lists.</p>
-              ) : (
-                <>
-                  <select id="list" className="input" value={listId} disabled={busy} onChange={(e) => setListId(e.target.value)}>
-                    {campaignLists.map((l) => <option key={l.id} value={l.id}>{l.name} · {l.ready} ready</option>)}
-                  </select>
-                  <label className="mt-3 flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); if (!e.target.checked) setCountdown(null); }} />
-                    Dial the next person as soon as I log the outcome
-                  </label>
-                  <button className="btn mt-4 w-full bg-emerald-600 py-3 text-base hover:bg-emerald-700" disabled={!ready || busy || !listId} onClick={dialNext}>
-                    {done ? "Next call" : "Start power dialling"}
-                  </button>
-                  {countdown !== null && <button className="btn-secondary mt-2 w-full" onClick={() => setCountdown(null)}>Pause</button>}
-                </>
-              )}
+          <div className="px-6 pb-6 pt-5">
+            <div className="inline-flex rounded-full bg-white/[0.06] p-1" role="tablist" aria-label="How you want to dial">
+              {(["manual", "list"] as const).map((m) => (
+                <button key={m} role="tab" aria-selected={mode === m} disabled={busy}
+                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${mode === m ? "bg-white text-night" : "text-slate-300 hover:text-white"}`}
+                  onClick={() => setMode(m)}>
+                  {m === "manual" ? "Type a number" : "Work a list"}
+                </button>
+              ))}
             </div>
-          )}
 
-          <div className="mt-5 flex items-center gap-2 text-sm font-medium" aria-live="polite">
-            <span className={`h-2.5 w-2.5 rounded-full ${phase === "live" ? "bg-emerald-500" : ready ? "bg-slate-400" : "bg-amber-400"}`} />
-            {status}
-            <span className="ml-auto text-xs font-normal text-slate-500">{done} calls this session</span>
-          </div>
-          {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        </div>
-
-        {current && (inCall || phase === "wrapup") && (
-          <div className="card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-xl font-semibold">{current.contact ? contactName({ ...current.contact, phone: current.number }) : current.number}</div>
-                <div className="text-sm text-slate-600">
-                  {[current.contact?.company, current.number].filter(Boolean).join(" · ")}
-                  {current.inbound && " · incoming"}
-                </div>
-              </div>
-              {inCall && (
-                <div className="flex flex-wrap gap-2">
-                  <button className="btn-secondary" onClick={() => { callRef.current?.mute(!muted); setMuted(!muted); }} disabled={phase !== "live"}>
-                    {muted ? "Unmute" : "Mute"}
-                  </button>
-                  <button className="btn-danger" onClick={() => callRef.current?.disconnect()}>Hang up</button>
-                </div>
-              )}
+            <div className="mt-5 flex items-center gap-2 text-sm" aria-live="polite">
+              <span className={`h-2 w-2 rounded-full ${phase === "live" ? "bg-good [animation:live-dot_1.2s_ease-in-out_infinite]" : phase === "dialing" ? "bg-flare" : ready ? "bg-slate-400" : "bg-flare"}`} />
+              <span className="text-slate-300">{status}</span>
+              {(inCall || phase === "wrapup") && <span className="font-display ml-auto text-lg font-semibold tabular-nums">{formatDuration(seconds)}</span>}
             </div>
-            {current.contact?.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{current.contact.notes}</p>}
-            {phase === "live" && (
-              <div className="mt-4 grid w-44 grid-cols-3 gap-1.5">
-                {KEYS.map((k) => (
-                  <button key={k} className="btn-secondary px-0" onClick={() => callRef.current?.sendDigits(k)}>{k}</button>
-                ))}
-              </div>
-            )}
 
-            {(phase === "wrapup" || phase === "live") && (
-              <div className="mt-6 border-t border-slate-200 pt-5">
-                <div className="label">Outcome</div>
-                <div className="flex flex-wrap gap-2">
-                  {DISPOSITIONS.map((d) => (
-                    <button key={d.value} onClick={() => setDisposition(d.value)} aria-pressed={disposition === d.value}
-                      className={`rounded-full border px-3 py-1.5 text-sm ${disposition === d.value ? "border-brand bg-indigo-50 font-medium text-brand" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-                {disposition === "callback" && (
-                  <div className="mt-3">
-                    <label className="label" htmlFor="cb">Call back at</label>
-                    <input id="cb" type="datetime-local" className="input w-auto" value={callbackAt} onChange={(e) => setCallbackAt(e.target.value)} />
+            {mode === "manual" || current ? (
+              <form onSubmit={dialManual}>
+                <label className="sr-only" htmlFor="number">Number to call</label>
+                <input id="number" inputMode="tel" autoComplete="off" readOnly={busy}
+                  className="font-display mt-2 w-full bg-transparent text-[34px] font-semibold tracking-tight text-white outline-none placeholder:text-slate-600"
+                  placeholder="087 123 4567" value={display} onChange={(e) => setNumber(e.target.value)} />
+                {current?.contact?.company && <div className="-mt-1 text-sm text-slate-400">{current.contact.company} · {current.number}</div>}
+                {!current && (
+                  <div className="mt-1 text-xs text-slate-500">
+                    A leading 0 is read as {campaign?.default_country === "GB" ? "a UK" : campaign?.default_country === "IE" ? "an Irish" : `a ${campaign?.default_country}`} number. They see {callerId}.
                   </div>
                 )}
-                <textarea className="input mt-3 min-h-20" placeholder="Notes" aria-label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-                {phase === "wrapup" && (
-                  <button className="btn mt-3" disabled={!disposition || saving} onClick={saveOutcome}>
-                    {saving ? "Saving…" : mode === "list" && auto && !current.inbound ? "Save and dial next" : "Save outcome"}
-                  </button>
+              </form>
+            ) : (
+              <div className="mt-3">
+                {campaignLists.length === 0 ? (
+                  <p className="text-sm text-slate-400">This campaign has no lists yet. Add one under Call lists.</p>
+                ) : (
+                  <>
+                    <label className="sr-only" htmlFor="list">Call list</label>
+                    <select id="list" disabled={busy} value={listId} onChange={(e) => setListId(e.target.value)}
+                      className="font-display w-full rounded-xl border border-white/15 bg-white/[0.06] px-4 py-3 text-xl font-semibold text-white outline-none focus:border-flare [&>option]:text-night [&>option]:text-base">
+                      {campaignLists.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.ready} to call)</option>)}
+                    </select>
+                    <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-slate-300">
+                      <button type="button" role="switch" aria-checked={auto} onClick={() => { setAuto(!auto); if (auto) setCountdown(null); }}
+                        className={`relative h-6 w-11 rounded-full transition ${auto ? "bg-good" : "bg-white/20"}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${auto ? "left-[22px]" : "left-0.5"}`} />
+                      </button>
+                      Ring the next person as soon as I save an outcome
+                    </label>
+                  </>
                 )}
               </div>
             )}
+
+            <div className="mt-5 grid grid-cols-[1fr_auto] items-end gap-6">
+              <div className="grid max-w-[260px] grid-cols-3 gap-2">
+                {KEYS.map((k) => (
+                  <button key={k} type="button" onClick={() => press(k)} disabled={!(phase === "live" || (!busy && mode === "manual"))}
+                    className="font-display h-11 rounded-xl bg-white/[0.06] text-lg font-semibold text-white transition hover:bg-white/[0.12] active:scale-95 disabled:opacity-30">
+                    {k}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col items-center gap-2 pb-1">
+                {inCall ? (
+                  <>
+                    <button type="button" aria-label="Hang up" onClick={() => callRef.current?.disconnect()}
+                      className={`flex h-[72px] w-[72px] items-center justify-center rounded-full bg-bad text-white transition hover:brightness-110 active:scale-95 ${phase === "dialing" ? "[animation:ring-pulse_1.4s_ease-out_infinite]" : ""}`}>
+                      <svg viewBox="0 0 24 24" className="h-8 w-8 rotate-[135deg]" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.5 15.5 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z" /></svg>
+                    </button>
+                    <button type="button" className="text-xs text-slate-300 hover:text-white disabled:opacity-40" disabled={phase !== "live"}
+                      onClick={() => { callRef.current?.mute(!muted); setMuted(!muted); }}>
+                      {muted ? "Unmute" : "Mute"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" aria-label={mode === "manual" ? "Call" : "Start dialling the list"}
+                      disabled={!ready || busy || (mode === "manual" ? !campaignId : !listId)}
+                      onClick={() => (mode === "manual" ? dialManual() : dialNext())}
+                      className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-good text-white shadow-[0_10px_30px_-8px_rgba(14,143,106,.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:shadow-none">
+                      <svg viewBox="0 0 24 24" className="h-8 w-8" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.5 15.5 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z" /></svg>
+                    </button>
+                    <span className="text-xs text-slate-400">{countdown !== null ? <button className="underline" onClick={() => setCountdown(null)}>Pause</button> : mode === "manual" ? "Call" : done ? "Next" : "Start"}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            {error && <p className="mt-4 rounded-xl bg-bad/20 px-3 py-2 text-sm text-red-100">{error}</p>}
           </div>
+        </section>
+
+        {current && (phase === "wrapup" || phase === "live") && (
+          <section className="card" aria-label="Outcome">
+            {current.contact?.notes && <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">{current.contact.notes}</p>}
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-lg font-bold text-night">How did it go?</h2>
+              <span className="text-xs text-slate-500">Press 1–9 to pick, Enter to save</span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {DISPOSITIONS.map((d, i) => (
+                <button key={d.value} onClick={() => setDisposition(d.value)} aria-pressed={disposition === d.value}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition active:scale-[.98] ${
+                    disposition === d.value ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-700 hover:border-brand/50"}`}>
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-xs ${disposition === d.value ? "bg-white/25" : "bg-slate-100 text-slate-500"}`}>{i + 1}</span>
+                  {d.label}
+                </button>
+              ))}
+            </div>
+            {disposition === "callback" && (
+              <div className="mt-3">
+                <label className="label" htmlFor="cb">When should we ring back?</label>
+                <input id="cb" type="datetime-local" className="input w-auto" value={callbackAt} onChange={(e) => setCallbackAt(e.target.value)} />
+              </div>
+            )}
+            <textarea className="input mt-3 min-h-20" placeholder="Anything worth remembering about this call" aria-label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            {phase === "wrapup" && (
+              <button className="btn mt-3" disabled={!disposition || saving} onClick={saveOutcome}>
+                {saving ? "Saving…" : mode === "list" && auto && !current.inbound ? "Save and ring the next person" : "Save outcome"}
+              </button>
+            )}
+          </section>
         )}
       </div>
 
-      <div className="space-y-5 xl:col-span-2">
+      <div className="space-y-5">
         <section className="card">
-          <h2 className="font-semibold">When you reach the decision maker</h2>
-          {campaign?.recording_disclosure && (
-            <>
-              <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Say</div>
-              <blockquote className="mt-1 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">“{campaign.recording_disclosure}”</blockquote>
-            </>
-          )}
-          <button className="btn mt-4 w-full" disabled={phase !== "live" || reachedDm} onClick={markReachedDm}>
-            {reachedDm ? "Marked: through to decision maker" : "Through to decision maker"}
-          </button>
-          <p className="mt-2 text-center text-xs text-slate-500">Counts towards “reached DM” in reports · shortcut R</p>
+          <h2 className="text-lg font-bold text-night">Call progress</h2>
+          <ol className="mt-4 space-y-0">
+            {[
+              { t: "Getting through", d: "Ask for the person you need. Nothing to press yet." },
+              { t: "Decision maker", d: "Read the recording notice, then mark it." },
+              { t: "Wrap up", d: "Pick an outcome and add a note." },
+            ].map((s2, i) => {
+              const n = i + 1;
+              const state = step > n ? "done" : step === n ? "now" : "next";
+              return (
+                <li key={s2.t} className="relative flex gap-3 pb-5 last:pb-0">
+                  {i < 2 && <span className={`absolute left-[13px] top-8 h-[calc(100%-28px)] w-px ${step > n ? "bg-good" : "bg-slate-200"}`} />}
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
+                    state === "done" ? "bg-good text-white" : state === "now" ? "bg-flare text-night ring-4 ring-flare/25" : "bg-slate-100 text-slate-500"}`}>
+                    {state === "done" ? "✓" : n}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className={`font-semibold ${state === "next" ? "text-slate-500" : "text-night"}`}>{s2.t}</div>
+                    <div className="text-sm text-slate-500">{s2.d}</div>
+                    {n === 2 && (
+                      <div className="mt-3">
+                        {campaign?.recording_disclosure && (
+                          <blockquote className="rounded-xl border-l-4 border-flare bg-amber-50/60 px-4 py-3 text-[15px] text-slate-800">
+                            {campaign.recording_disclosure}
+                          </blockquote>
+                        )}
+                        <button className="btn mt-3 w-full" disabled={phase !== "live" || reachedDm} onClick={markReachedDm}>
+                          {reachedDm ? "Marked as decision maker" : "I'm through to the decision maker"}
+                          {!reachedDm && <kbd className="rounded bg-white/20 px-1.5 text-xs">R</kbd>}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </section>
 
         {canDrop && (
           <section className="card">
-            <h2 className="font-semibold">Got voicemail?</h2>
-            <label className="sr-only" htmlFor="drop">Voicemail to leave</label>
+            <h2 className="text-lg font-bold text-night">Answering machine?</h2>
+            <p className="text-sm text-slate-500">Wait for the tone, then leave a message and move on.</p>
+            <label className="sr-only" htmlFor="drop">Message to leave</label>
             <select id="drop" className="input mt-3" value={selectedDrop} disabled={!!dropped} onChange={(e) => setDropChoice(e.target.value)}>
-              {offered.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}{d.owner_id === me.id ? " (yours)" : " (shared)"}</option>
-              ))}
+              {offered.map((d) => <option key={d.id} value={d.id}>{d.name}{d.owner_id === me.id ? " (yours)" : " (team)"}</option>)}
             </select>
             <button className="btn-secondary mt-3 w-full" disabled={phase !== "live" || !!dropped} onClick={voicemailDrop}>
-              {dropped ? `Left: ${dropped}` : "Drop voicemail"}
+              {dropped ? `Left “${dropped}”` : "Leave this message"}
+              {!dropped && <kbd className="rounded bg-slate-100 px-1.5 text-xs">V</kbd>}
             </button>
-            <p className="mt-2 text-center text-xs text-slate-500">Wait for the beep, then click · shortcut V</p>
           </section>
         )}
 
         {script && (script.script_flow?.length > 0 || script.script_objections?.length > 0 || script.script) && (
           <section className="card">
-            <h2 className="font-semibold">Call flow</h2>
+            <h2 className="text-lg font-bold text-night">Your script</h2>
             {script.script_flow?.length > 0 && (
-              <ul className="mt-3 space-y-2">
-                {script.script_flow.map((step, i) => (
+              <ul className="mt-3 space-y-1">
+                {script.script_flow.map((stepText, i) => (
                   <li key={i}>
-                    <label className="flex items-start gap-2 text-sm">
-                      <input type="checkbox" className="mt-0.5" checked={!!checked[i]} onChange={(e) => setChecked({ ...checked, [i]: e.target.checked })} />
-                      <span className={checked[i] ? "text-slate-400 line-through" : ""}>{step}</span>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-lg px-2 py-1.5 text-sm transition hover:bg-slate-50 ${checked[i] ? "text-slate-400" : "text-slate-800"}`}>
+                      <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#0e8f6a]" checked={!!checked[i]} onChange={(e) => setChecked({ ...checked, [i]: e.target.checked })} />
+                      <span className={checked[i] ? "line-through" : ""}>{stepText}</span>
                     </label>
                   </li>
                 ))}
               </ul>
             )}
-            {script.script && <p className="mt-3 whitespace-pre-wrap border-t border-slate-100 pt-3 text-sm text-slate-700">{script.script}</p>}
+            {script.script && (
+              <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                <summary className="cursor-pointer font-medium text-slate-700">Full wording</summary>
+                <p className="mt-2 whitespace-pre-wrap text-slate-700">{script.script}</p>
+              </details>
+            )}
             {script.script_objections?.length > 0 && (
-              <div className="mt-4 border-t border-slate-100 pt-3">
-                <h3 className="text-sm font-semibold">If they say…</h3>
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-slate-700">When they push back</h3>
                 {script.script_objections.map((o, i) => (
-                  <details key={i} className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                    <summary className="cursor-pointer font-medium">{o.objection}</summary>
-                    <p className="mt-1 text-slate-700">{o.answer}</p>
+                  <details key={i} className="group mt-2 rounded-xl border border-slate-200 px-3 py-2 text-sm open:border-brand/40 open:bg-brand/[0.03]">
+                    <summary className="cursor-pointer font-medium text-night">“{o.objection}”</summary>
+                    <p className="mt-1.5 text-slate-700">{o.answer}</p>
                   </details>
                 ))}
               </div>

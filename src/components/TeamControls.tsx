@@ -23,8 +23,8 @@ export function AccessSelect({ id, role, editable }: { id: string; role: string;
           }
           router.refresh();
         }}>
-        <option value="agent">Agent: own calls only</option>
-        <option value="manager">Manager: all calls</option>
+        <option value="agent">Agent (sees own calls)</option>
+        <option value="manager">Manager (sees everyone)</option>
       </select>
       {error && <div className="text-xs text-red-700">{error}</div>}
     </div>
@@ -45,7 +45,7 @@ export function AddAgent() {
     const json = await res.json();
     setBusy(false);
     if (!res.ok) return setMsg({ ok: false, text: json.error ?? "Could not add" });
-    setMsg({ ok: true, text: `Invite sent to ${form.email}. They'll join your team when they click the link.` });
+    setMsg({ ok: true, text: `Invite sent to ${form.email}.` });
     setForm({ name: "", email: "", role: "agent" });
     router.refresh();
   }
@@ -53,7 +53,7 @@ export function AddAgent() {
   return (
     <form onSubmit={add} className="card grid gap-3 md:grid-cols-5 md:items-end">
       <div>
-        <label className="label" htmlFor="ag-name">New agent name</label>
+        <label className="label" htmlFor="ag-name">Name</label>
         <input id="ag-name" className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
       </div>
       <div className="md:col-span-2">
@@ -63,13 +63,13 @@ export function AddAgent() {
       <div>
         <label className="label" htmlFor="ag-role">Access</label>
         <select id="ag-role" className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-          <option value="agent">Agent: own calls only</option>
-          <option value="manager">Manager: all calls</option>
+          <option value="agent">Agent (sees own calls)</option>
+          <option value="manager">Manager (sees everyone)</option>
         </select>
       </div>
-      <button className="btn" disabled={busy}>{busy ? "Sending…" : "Add agent"}</button>
+      <button className="btn" disabled={busy}>{busy ? "Sending…" : "Invite"}</button>
       <p className="text-xs text-slate-500 md:col-span-5">
-        They get an email to join. They can sign in with a password, or with Microsoft or Google using that same email, and only see what their access allows.
+        We email them a link to join. They can set a password or use Microsoft or Google with the same address. Agents only ever see their own calls.
       </p>
       {msg && <p className={`text-sm md:col-span-5 ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.text}</p>}
     </form>

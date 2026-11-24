@@ -31,8 +31,8 @@ export default async function ScorecardsPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PageHeader title="Scorecards" subtitle="Each campaign uses one scorecard. The AI scores every call against it.">
-        {isManager(profile) && !startNew && <Link href="/scorecards?new=1" className="btn">+ New scorecard</Link>}
+      <PageHeader title="Scorecards" subtitle="What a good call looks like, point by point. Each campaign picks one, and the AI marks every recorded call against it.">
+        {isManager(profile) && !startNew && <Link href="/scorecards?new=1" className="btn">New scorecard</Link>}
       </PageHeader>
       <TemplatesEditor templates={templates} canEdit={isManager(profile)} stats={stats} startNew={startNew} />
     </>

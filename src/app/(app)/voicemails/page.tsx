@@ -15,8 +15,8 @@ export default async function VoicemailsPage() {
   return (
     <>
       <PageHeader
-        title="Voicemail drops"
-        subtitle="Record a message once, then drop it into a prospect's voicemail with one click and move straight to the next call."
+        title="Voicemails"
+        subtitle="Pre-recorded messages for answering machines. Leave one with a single click in the dialler, then get on with your next call."
       />
       <VoicemailLibrary
         drops={(drops ?? []) as VoicemailDrop[]}

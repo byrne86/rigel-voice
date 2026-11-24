@@ -84,7 +84,7 @@ export default function CampaignForm({
       : await supabase.from("campaigns").insert(row).select("id").single();
     setBusy(false);
     if (res.error) return setMsg({ ok: false, text: res.error.message });
-    setMsg({ ok: true, text: campaign ? "Saved" : "Campaign added" });
+    setMsg({ ok: true, text: campaign ? "Changes saved" : "Campaign created" });
     if (!campaign) {
       setF({ ...f, name: "", ai_context: "" });
     }
@@ -93,54 +93,54 @@ export default function CampaignForm({
 
   return (
     <form onSubmit={save} className="card space-y-5">
-      <h2 className="font-semibold">{campaign ? "Campaign settings" : "Add a campaign"}</h2>
+      <h2 className="text-lg font-bold text-night">{campaign ? "Settings" : "New campaign"}</h2>
       <div className="grid gap-4 md:grid-cols-3">
         <div>
           <label className="label" htmlFor="c-name">Campaign name</label>
-          <input id="c-name" className="input" placeholder="e.g. Acme renewals Q1" value={f.name} onChange={set("name")} />
+          <input id="c-name" className="input" placeholder="e.g. Spring renewals" value={f.name} onChange={set("name")} />
         </div>
         <div>
-          <label className="label" htmlFor="c-caller">Dialler caller ID (Twilio)</label>
+          <label className="label" htmlFor="c-caller">Number customers see</label>
           <select id="c-caller" className="input" value={f.caller_id} onChange={set("caller_id")}>
-            <option value="">{numbers.length ? "Account default" : "Account default (connect Twilio to choose)"}</option>
+            <option value="">{numbers.length ? "Your main number" : "Your main number (connect Twilio to pick others)"}</option>
             {f.caller_id && !numbers.some((n) => n.number === f.caller_id) && <option value={f.caller_id}>{f.caller_id}</option>}
             {numbers.map((n) => <option key={n.number} value={n.number}>{n.number}{n.name && n.name !== n.number ? ` · ${n.name}` : ""}</option>)}
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="c-score">Scorecard</label>
+          <label className="label" htmlFor="c-score">Mark calls with</label>
           <select id="c-score" className="input" value={f.scorecard_template_id} onChange={set("scorecard_template_id")}>
-            <option value="">Default active scorecard</option>
+            <option value="">Your first scorecard</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="c-lang">Calls are in</label>
+          <label className="label" htmlFor="c-lang">Language spoken on calls</label>
           <select id="c-lang" className="input" value={f.call_language} onChange={set("call_language")}>
-            {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}{l.value === "en" ? " (default)" : ""}</option>)}
+            {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="c-fb">Agent feedback in</label>
+          <label className="label" htmlFor="c-fb">Coaching notes written in</label>
           <select id="c-fb" className="input" value={f.feedback_language} onChange={set("feedback_language")}>
             {LANGUAGES.filter((l) => l.value !== "multi").map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
           </select>
         </div>
-        <p className="self-end text-xs text-slate-500">Summaries are always in English. Quotes from the call stay in the original language with a translation.</p>
+        <p className="self-end text-xs text-slate-500">Call summaries stay in English. Quotes keep the speaker&apos;s own words, with a translation.</p>
       </div>
 
       <div>
-        <label className="label" htmlFor="c-ctx">Context for the AI</label>
-        <textarea id="c-ctx" className="input" rows={3} placeholder="Who the client is, what they sell, who we call and what a good outcome looks like" value={f.ai_context} onChange={set("ai_context")} />
+        <label className="label" htmlFor="c-ctx">Brief the AI</label>
+        <textarea id="c-ctx" className="input" rows={3} placeholder="Who you're calling on behalf of, what you're offering, who usually answers, and what counts as a win" value={f.ai_context} onChange={set("ai_context")} />
       </div>
       <div>
-        <label className="label" htmlFor="c-disc">Recording disclosure line agents say</label>
+        <label className="label" htmlFor="c-disc">Recording notice agents read out</label>
         <input id="c-disc" className="input" value={f.recording_disclosure} onChange={set("recording_disclosure")} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <div>
-          <label className="label" htmlFor="c-country">Numbers starting 0 are from</label>
+          <label className="label" htmlFor="c-country">Country for local numbers</label>
           <select id="c-country" className="input" value={f.default_country} onChange={set("default_country")}>
             {[["IE", "Ireland"], ["GB", "United Kingdom"], ["US", "United States"], ["DE", "Germany"], ["FR", "France"], ["ES", "Spain"], ["NL", "Netherlands"]].map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
@@ -148,15 +148,15 @@ export default function CampaignForm({
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="c-att">Attempts per contact</label>
+          <label className="label" htmlFor="c-att">Tries per person</label>
           <input id="c-att" className="input" type="number" min={1} max={10} value={f.max_attempts} onChange={set("max_attempts")} />
         </div>
         <div>
-          <label className="label" htmlFor="c-retry">Minutes before retrying</label>
+          <label className="label" htmlFor="c-retry">Wait between tries (minutes)</label>
           <input id="c-retry" className="input" type="number" min={5} value={f.retry_minutes} onChange={set("retry_minutes")} />
         </div>
         <div>
-          <label className="label" htmlFor="c-voice">AI voice (voicemails, AI caller)</label>
+          <label className="label" htmlFor="c-voice">Voice for typed messages</label>
           <select id="c-voice" className="input" value={f.tts_voice} onChange={set("tts_voice")}>
             {VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
@@ -165,38 +165,38 @@ export default function CampaignForm({
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="label" htmlFor="c-mf">Rigel CRM match field (optional)</label>
-          <input id="c-mf" className="input" placeholder="e.g. Tag or Account number" value={f.crm_match_field} onChange={set("crm_match_field")} />
+          <label className="label" htmlFor="c-mf">Rigel CRM field to match on (optional)</label>
+          <input id="c-mf" className="input" placeholder="e.g. Tag" value={f.crm_match_field} onChange={set("crm_match_field")} />
         </div>
         <div>
-          <label className="label" htmlFor="c-mv">Match value</label>
-          <input id="c-mv" className="input" placeholder="e.g. Acme2026" value={f.crm_match_value} onChange={set("crm_match_value")} />
+          <label className="label" htmlFor="c-mv">Value it should have</label>
+          <input id="c-mv" className="input" placeholder="e.g. spring-renewals" value={f.crm_match_value} onChange={set("crm_match_value")} />
         </div>
       </div>
 
       <fieldset className="rounded-lg border border-slate-200 p-4">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input type="checkbox" checked={f.ring_agents_on_callback} onChange={set("ring_agents_on_callback")} />
-          Ring agents when people call the dialler caller ID back
+          Put callbacks through to agents
         </label>
         <p className="mt-1 text-xs text-slate-500">
-          Rings the agent who last called them first, then everyone who has worked this campaign in the last 30 days, then the fallback. Agents need Rigel Voice open in their browser.
+          When someone rings this number back, we try the agent they spoke to, then anyone on this campaign in the past month. Agents need Rigel Voice open to hear it.
         </p>
         <div className="mt-3 grid gap-4 md:grid-cols-3">
           <div>
-            <label className="label" htmlFor="c-fall">If nobody answers</label>
+            <label className="label" htmlFor="c-fall">If no agent picks up</label>
             <select id="c-fall" className="input" value={f.inbound_fallback} onChange={set("inbound_fallback")}>
-              <option value="voicemail">Take a voicemail</option>
-              <option value="forward">Forward to a number</option>
-              <option value="hangup">Say we&apos;re unavailable</option>
+              <option value="voicemail">Take a message</option>
+              <option value="forward">Send it to another phone</option>
+              <option value="hangup">Say nobody&apos;s free</option>
             </select>
           </div>
           <div>
-            <label className="label" htmlFor="c-fwd">Forward to</label>
+            <label className="label" htmlFor="c-fwd">Other phone</label>
             <input id="c-fwd" className="input" placeholder="087 123 4567" disabled={f.inbound_fallback !== "forward"} value={f.forward_to} onChange={set("forward_to")} />
           </div>
           <div>
-            <label className="label" htmlFor="c-ring">Ring each step for (seconds)</label>
+            <label className="label" htmlFor="c-ring">Seconds to ring each time</label>
             <input id="c-ring" className="input" type="number" min={5} max={60} value={f.ring_seconds} onChange={set("ring_seconds")} />
           </div>
         </div>
@@ -204,16 +204,16 @@ export default function CampaignForm({
 
       {f.mode === "broadcast" && (
         <div>
-          <label className="label" htmlFor="c-bm">AI caller message</label>
+          <label className="label" htmlFor="c-bm">What the AI caller says</label>
           <textarea id="c-bm" className="input" rows={3} value={f.broadcast_message} onChange={set("broadcast_message")} />
         </div>
       )}
 
       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.crm_note} onChange={set("crm_note")} /> Add summary note to Rigel CRM</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.is_default_inbound} onChange={set("is_default_inbound")} /> Default for unmatched calls</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.allow_voicemail_drops} onChange={set("allow_voicemail_drops")} /> Allow voicemail drops</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.record_calls} onChange={set("record_calls")} /> Record calls</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={f.crm_note} onChange={set("crm_note")} /> Write call summaries into Rigel CRM</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={f.is_default_inbound} onChange={set("is_default_inbound")} /> Use for calls we can&apos;t match</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={f.allow_voicemail_drops} onChange={set("allow_voicemail_drops")} /> Agents can leave voicemails</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={f.record_calls} onChange={set("record_calls")} /> Record and score calls</label>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={active} onChange={(e) => setF({ ...f, status: e.target.checked ? "active" : "paused" })} /> Active
         </label>
@@ -221,7 +221,7 @@ export default function CampaignForm({
 
       {msg && <p className={`text-sm ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.text}</p>}
       <div className="flex justify-end">
-        <button className="btn" disabled={busy}>{busy ? "Saving…" : campaign ? "Save campaign" : "Add campaign"}</button>
+        <button className="btn" disabled={busy}>{busy ? "Saving…" : campaign ? "Save changes" : "Create campaign"}</button>
       </div>
     </form>
   );

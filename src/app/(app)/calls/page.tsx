@@ -58,7 +58,7 @@ export default async function CallsPage({ searchParams }: { searchParams: Promis
       <form method="get" className="card mb-5 grid gap-3 md:grid-cols-3 xl:grid-cols-7 xl:items-end">
         <div className="xl:col-span-2">
           <label className="label" htmlFor="q">Search</label>
-          <input id="q" name="q" className="input" placeholder="Customer, number or summary" defaultValue={sp.q ?? ""} />
+          <input id="q" name="q" className="input" placeholder="Name, number or anything said on the call" defaultValue={sp.q ?? ""} />
         </div>
         {manager && (
           <div>
@@ -104,8 +104,8 @@ export default async function CallsPage({ searchParams }: { searchParams: Promis
           </select>
         </div>
         <div className="flex gap-2 xl:col-span-7">
-          <button className="btn">Filter</button>
-          <Link href="/calls" className="btn-secondary">Clear</Link>
+          <button className="btn">Apply</button>
+          <Link href="/calls" className="btn-secondary">Reset</Link>
         </div>
       </form>
 
@@ -116,7 +116,7 @@ export default async function CallsPage({ searchParams }: { searchParams: Promis
           </thead>
           <tbody className="divide-y divide-slate-100">
             {calls.length === 0 ? (
-              <tr><td colSpan={8} className="td py-10 text-center text-slate-500">No calls match.</td></tr>
+              <tr><td colSpan={8} className="td py-10 text-center text-slate-500">Nothing matches those filters. Try widening the period.</td></tr>
             ) : (
               calls.map((c) => {
                 const ct = first(c.contacts);

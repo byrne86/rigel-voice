@@ -22,9 +22,9 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader title="Dialler" subtitle="Calls go out through Twilio and are recorded for quality and training." />
+      <PageHeader title="Dialler" subtitle="Type a number or work through a list. Every call is recorded, transcribed and scored." />
       {(campaigns ?? []).length === 0 ? (
-        <div className="card text-sm text-slate-600">There are no active campaigns. Create one under Campaigns and set it to Active.</div>
+        <div className="card text-sm text-slate-600">You need an active campaign before you can call. Add one under Campaigns.</div>
       ) : (
         <Dialer
           me={{ id: profile.id, name: profile.full_name || profile.email || "You" }}

@@ -101,7 +101,7 @@ export default async function CallPage({ params }: { params: Promise<{ id: strin
                   ))}
                 </div>
                 {coaching.length > 0 && (
-                  <div className="mt-3 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                  <div className="mt-3 rounded-lg bg-brand/5 px-3 py-2 text-sm text-brand">
                     <div className="font-medium">Coaching tips</div>
                     <ul className="ml-4 list-disc">{coaching.map((t, i) => <li key={i}>{t}</li>)}</ul>
                   </div>
@@ -124,7 +124,7 @@ export default async function CallPage({ params }: { params: Promise<{ id: strin
               <div className="mt-3 space-y-2.5">
                 {utterances.map((u, i) => (
                   <div key={i} className={`flex ${u.speaker === "Agent" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${u.speaker === "Agent" ? "bg-indigo-50" : "bg-slate-100"}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${u.speaker === "Agent" ? "bg-brand/5" : "bg-slate-100"}`}>
                       <div className="mb-0.5 text-xs text-slate-500">{u.speaker} · {formatDuration(u.start)}</div>
                       {u.text}
                     </div>

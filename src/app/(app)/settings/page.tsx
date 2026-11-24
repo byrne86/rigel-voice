@@ -31,10 +31,10 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="Connections and pipeline health" />
+      <PageHeader title="Settings" subtitle="Accounts Rigel Voice relies on, call scoring, and who can sign in." />
       <div className="grid gap-5 xl:grid-cols-2">
         <section className="card">
-          <h2 className="mb-3 font-semibold">Connections</h2>
+          <h2 className="mb-3 text-lg font-bold text-night">Accounts</h2>
           <ul className="divide-y divide-slate-100">
             {CONNECTIONS.map(([name, hint, keys]) => {
               const ok = keys.every((k) => !!process.env[k]);
@@ -44,26 +44,26 @@ export default async function SettingsPage() {
                     <div className="text-sm font-medium">{name}</div>
                     <div className="text-xs text-slate-500">{hint}</div>
                   </div>
-                  <span className={`text-sm font-medium ${ok ? "text-emerald-700" : "text-red-700"}`}>{ok ? "✓ Configured" : "✗ Missing"}</span>
+                  <span className={`text-sm font-medium ${ok ? "text-emerald-700" : "text-red-700"}`}>{ok ? "Connected" : "Not set up"}</span>
                 </li>
               );
             })}
             <li className="flex items-center justify-between gap-3 py-2.5">
               <div>
                 <div className="text-sm font-medium">Calling for {profile.organizations?.name}</div>
-                <div className="text-xs text-slate-500">Switched on by Rigel support for each new company</div>
+                <div className="text-xs text-slate-500">We switch this on once your account is checked</div>
               </div>
-              <span className={`text-sm font-medium ${org?.calling_enabled ? "text-emerald-700" : "text-amber-700"}`}>{org?.calling_enabled ? "✓ On" : "Not yet on"}</span>
+              <span className={`text-sm font-medium ${org?.calling_enabled ? "text-emerald-700" : "text-amber-700"}`}>{org?.calling_enabled ? "On" : "Waiting"}</span>
             </li>
           </ul>
-          <p className="mt-3 text-xs text-slate-500">AI model: {process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5"} · Calls under {process.env.MIN_SCORING_SECONDS ?? 20}s are skipped</p>
+          <p className="mt-3 text-xs text-slate-500">Scored by {process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5"}. Calls shorter than {process.env.MIN_SCORING_SECONDS ?? 20} seconds aren&apos;t scored.</p>
         </section>
 
         <section className="card">
-          <h2 className="mb-1 font-semibold">Pipeline</h2>
-          <p className="text-sm text-slate-600">Last call scored: {fmt(lastScored?.[0]?.created_at)}</p>
+          <h2 className="mb-1 text-lg font-bold text-night">Scoring</h2>
+          <p className="text-sm text-slate-600">Last call marked {fmt(lastScored?.[0]?.created_at)}.</p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            {[["pending", "Queued"], ["transcribing", "Transcribing"], ["scoring", "Scoring"], ["done", "Complete"], ["skipped", "Skipped"], ["failed", "Failed"]].map(([k, l]) => (
+            {[["pending", "Waiting"], ["transcribing", "Transcribing"], ["scoring", "Marking"], ["done", "Done"], ["skipped", "Too short"], ["failed", "Failed"]].map(([k, l]) => (
               <span key={k} className={`badge ${k === "failed" && counts[k] ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700"}`}>{l} {counts[k] ?? 0}</span>
             ))}
           </div>
@@ -71,34 +71,34 @@ export default async function SettingsPage() {
         </section>
 
         <section className="card">
-          <h2 className="mb-1 font-semibold">Recording retention</h2>
+          <h2 className="mb-1 text-lg font-bold text-night">Keeping recordings</h2>
           <p className="mb-3 text-sm text-slate-600">
-            Recordings older than this are deleted for good, from Twilio as well as from Rigel Voice. Transcripts and scorecards are kept. Deleting runs once a day.
+            Older recordings are removed for good each night, from Twilio too. You keep the transcripts and scores.
           </p>
           {manager ? <Retention days={org?.recording_retention_days ?? null} /> : <p className="text-sm">{org?.recording_retention_days ? `${org.recording_retention_days} days` : "Kept forever"}</p>}
-          <p className="mt-3 text-xs text-slate-500">{stored ?? 0} recordings stored{oldest?.[0] ? `, the oldest from ${fmt(oldest[0].created_at)}` : ""}.</p>
+          <p className="mt-3 text-xs text-slate-500">You have {stored ?? 0} recordings{oldest?.[0] ? `, going back to ${fmt(oldest[0].created_at)}` : ""}.</p>
         </section>
 
         <section className="card">
-          <h2 className="mb-1 font-semibold">Sign-ins</h2>
+          <h2 className="mb-1 text-lg font-bold text-night">Signing in</h2>
           <p className="mb-3 text-sm text-slate-600">
-            Staff sign in with a password, or with their Microsoft or Google account, so that provider&apos;s own security (including two-step sign-in) applies.
+            People can use a password, or their Microsoft or Google account. Those accounts bring their own two-step checks with them.
           </p>
           <SignOutButtons manager={manager} />
         </section>
 
         {manager && (
           <section className="card">
-            <h2 className="mb-1 font-semibold">Team join code</h2>
+            <h2 className="mb-1 text-lg font-bold text-night">Join code</h2>
             <p className="text-sm text-slate-600">
-              Easiest is to add people from Agents. Or ask them to create an account and enter this code:
+              Inviting people from Agents is easiest. They can also sign up and type this code:
               <span className="ml-2 rounded bg-slate-100 px-2 py-1 font-mono font-semibold">{org?.join_code}</span>
             </p>
           </section>
         )}
       </div>
 
-      <h2 className="mb-3 mt-8 text-lg font-semibold">Do not call list</h2>
+      <h2 className="mb-3 mt-8 text-lg font-bold text-night">Never call these numbers</h2>
       <DncPanel numbers={dnc ?? []} canEdit={manager} />
     </>
   );

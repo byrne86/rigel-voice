@@ -45,14 +45,14 @@ export default function UploadRecording({
     router.push(`/calls/${json.callId}`);
   }
 
-  if (!open) return <button className="btn-secondary" onClick={() => setOpen(true)}>Upload a recording</button>;
+  if (!open) return <button className="btn-secondary" onClick={() => setOpen(true)}>Score a recording</button>;
   return (
     <form onSubmit={upload} className="card w-full space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Upload a recording</h2>
+        <h2 className="text-lg font-bold text-night">Score a recording</h2>
         <button type="button" className="text-sm text-slate-500" onClick={() => setOpen(false)}>Close</button>
       </div>
-      <p className="text-xs text-slate-500">For calls made on another phone system. It is transcribed and scored like any other call.</p>
+      <p className="text-sm text-slate-500">Got a call from another phone system? Upload it and it gets the same transcript and scorecard as a dialler call.</p>
       <input type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm" aria-label="Recording file" className="block text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       <div className="grid gap-3 sm:grid-cols-3">
         <select className="input" aria-label="Campaign" value={form.campaignId} onChange={set("campaignId")}>

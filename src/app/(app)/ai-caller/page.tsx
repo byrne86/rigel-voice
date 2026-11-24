@@ -34,7 +34,7 @@ export default async function AiCallerPage() {
     <>
       <PageHeader
         title="AI caller"
-        subtitle="Automated calls where an AI voice delivers your message. Listeners can press 1 for a call back or 9 to opt out."
+        subtitle="Calls placed for you by an AI voice. People can press 1 to be called back or 9 to stop hearing from you."
       >
       </PageHeader>
 

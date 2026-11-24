@@ -27,7 +27,7 @@ export default function ReportFilters({
       <div className="flex flex-wrap gap-2">
         {PRESETS.map((p) => (
           <Link key={p} href={keep(p)}
-            className={`rounded-full border px-3 py-1 text-sm ${range.preset === p ? "border-brand bg-indigo-50 font-medium text-brand" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            className={`chip ${range.preset === p ? "chip-on" : "chip-off"}`}>
             {PRESET_LABELS[p]}
           </Link>
         ))}
@@ -57,7 +57,7 @@ export default function ReportFilters({
             <option value="ai">AI caller</option>
           </select>
         </div>
-        <button className="btn">Show</button>
+        <button className="btn">Update</button>
       </form>
     </div>
   );

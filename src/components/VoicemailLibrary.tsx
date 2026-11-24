@@ -114,7 +114,7 @@ export default function VoicemailLibrary({
     router.refresh();
   }
 
-  const campaignName = (id: string | null) => (id ? campaigns.find((c) => c.id === id)?.name ?? "—" : "Any campaign");
+  const campaignName = (id: string | null) => (id ? campaigns.find((c) => c.id === id)?.name ?? "—" : "All campaigns");
 
   return (
     <div className="grid gap-5 xl:grid-cols-3">
@@ -124,15 +124,15 @@ export default function VoicemailLibrary({
             <thead className="border-b border-slate-200">
               <tr>
                 <th className="th">Message</th>
-                <th className="th">Belongs to</th>
-                <th className="th">Campaign</th>
-                <th className="th">Listen</th>
+                <th className="th">Who can use it</th>
+                <th className="th">Used on</th>
+                <th className="th">Play</th>
                 <th className="th" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {drops.length === 0 ? (
-                <tr><td colSpan={5} className="td py-10 text-center text-slate-500">No messages yet. Record one on the right.</td></tr>
+                <tr><td colSpan={5} className="td py-10 text-center text-slate-500">Nothing recorded yet. Use the panel on the right to make your first message.</td></tr>
               ) : (
                 drops.map((d) => (
                   <tr key={d.id}>
@@ -144,7 +144,7 @@ export default function VoicemailLibrary({
                         {d.kind === "tts" ? ` · AI voice (${voiceName(d.tts_voice)})` : ""}
                       </div>
                     </td>
-                    <td className="td">{d.shared ? "Everyone" : people[d.owner_id ?? ""] ?? "—"}</td>
+                    <td className="td">{d.shared ? "Whole team" : `Only ${people[d.owner_id ?? ""] ?? "its owner"}`}</td>
                     <td className="td">{campaignName(d.campaign_id)}</td>
                     <td className="td">
                       {d.kind === "audio" && d.audio_path ? (
@@ -165,45 +165,45 @@ export default function VoicemailLibrary({
           </table>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          In the dialler, wait for the beep, then click Drop voicemail (or press V). Your own message for the campaign is offered first, then shared ones.
+          The dialler suggests your own message for the campaign you&apos;re on, then the team&apos;s. Press V on a call to leave it.
         </p>
       </div>
 
       <div className="space-y-5">
         <section className="card space-y-4">
-          <h2 className="font-semibold">New message</h2>
+          <h2 className="text-lg font-bold text-night">Record a message</h2>
           <div>
             <label className="label" htmlFor="vm-name">Name</label>
-            <input id="vm-name" className="input" placeholder="e.g. Intro, short" value={name} onChange={(e) => setName(e.target.value)} />
+            <input id="vm-name" className="input" placeholder="e.g. First try, friendly" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div>
-            <label className="label" htmlFor="vm-campaign">Campaign</label>
+            <label className="label" htmlFor="vm-campaign">Use it on</label>
             <select id="vm-campaign" className="input" value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
-              <option value="">Any campaign</option>
+              <option value="">All campaigns</option>
               {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
-            Shared message for all agents on this campaign
+            Let the whole team use it
           </label>
 
           <div className="flex flex-wrap items-center gap-3">
             {kind !== "tts" && (
               recording ? (
-                <button className="btn-danger" onClick={stopRecording}>■ Stop · {elapsed}s</button>
+                <button className="btn-danger [animation:ring-pulse_1.4s_ease-out_infinite]" onClick={stopRecording}>■ Stop ({elapsed}s)</button>
               ) : (
-                <button className="btn-danger" onClick={() => { setKind("record"); void startRecording(); }}>● Record</button>
+                <button className="btn-danger" onClick={() => { setKind("record"); void startRecording(); }}>● Start recording</button>
               )
             )}
             <span className="text-sm text-slate-500">or</span>
             <label className="cursor-pointer text-sm font-medium text-brand hover:underline">
-              upload an MP3 or WAV
+              upload an MP3 or WAV file
               <input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only"
                 onChange={(e) => { setKind("upload"); pickFile(e.target.files?.[0]); }} />
             </label>
             <button type="button" className="text-sm text-slate-600 underline" onClick={() => { setKind(kind === "tts" ? "record" : "tts"); setAudio(null); }}>
-              {kind === "tts" ? "record instead" : "or let the AI voice say it"}
+              {kind === "tts" ? "record my own voice instead" : "or type it for an AI voice"}
             </button>
           </div>
 
@@ -220,12 +220,17 @@ export default function VoicemailLibrary({
           )}
 
           {error && <p className="text-sm text-red-700">{error}</p>}
-          <button className="btn" onClick={save} disabled={busy || recording}>{busy ? "Saving…" : "Save message"}</button>
+          <button className="btn" onClick={save} disabled={busy || recording}>{busy ? "Saving…" : "Save voicemail"}</button>
         </section>
 
         <section className="card text-sm text-slate-600">
-          <strong className="text-slate-800">Tips for a message that gets callbacks:</strong> keep it under 25 seconds, say your name and company early,
-          give one reason to call back, and say the number slowly twice. Smile while you record.
+          <h3 className="mb-1 text-base font-bold text-night">What gets people to ring back</h3>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Twenty seconds or less.</li>
+            <li>Who you are and why you called, in the first sentence.</li>
+            <li>Your number, read slowly, at the end.</li>
+            <li>Record somewhere quiet, standing up if you can. It sounds livelier.</li>
+          </ul>
         </section>
       </div>
     </div>

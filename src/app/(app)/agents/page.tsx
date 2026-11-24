@@ -61,7 +61,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader title="Agents" subtitle={manager ? "Your team and how each person is doing" : "How you're doing"}>
+      <PageHeader title="Agents" subtitle={manager ? "Everyone on your team, side by side." : "Your own numbers."}>
         <PeriodTabs current={days} base="/agents" />
       </PageHeader>
       <div className="card overflow-x-auto p-0">
@@ -73,12 +73,12 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
               <th className="th text-right">Calls scored</th>
               <th className="th">Average score</th>
               <th className="th text-right">Pass rate</th>
-              <th className="th text-right">Talk time</th>
+              <th className="th text-right">Talk share</th>
               <th className="th text-right">Avg length</th>
               <th className="th text-right">Dialled</th>
-              <th className="th text-right">Reached DM</th>
+              <th className="th text-right">Decision makers</th>
               <th className="th text-right">Voicemails</th>
-              <th className="th text-right">Not recorded</th>
+              <th className="th text-right">No recording</th>
               {manager && <th className="th" />}
             </tr>
           </thead>
@@ -87,7 +87,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
               <tr key={id}>
                 <td className="td">
                   <div className="font-medium">{name}</div>
-                  <div className="text-xs text-slate-500">{isAi ? "no email, can't sign in" : email}</div>
+                  <div className="text-xs text-slate-500">{isAi ? "automated calls" : email}</div>
                 </td>
                 <td className="td">{isAi ? <span className="badge bg-slate-100 text-slate-700">agent</span> : <AccessSelect id={id} role={role} editable={manager && id !== profile.id} />}</td>
                 <td className="td text-right">{s.scored}</td>
@@ -120,14 +120,14 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-slate-500">Talk time is the share of each call the agent spent speaking. Not recorded counts connected calls with no recording.</p>
+      <p className="mt-2 text-xs text-slate-500">Talk share is how much of each call the agent spent talking; under half usually means they&apos;re listening well. No recording counts connected calls we couldn&apos;t score.</p>
 
       {manager && (
         <div className="mt-8 space-y-4">
           <AddAgent />
           {(invites ?? []).length > 0 && (
             <div className="card">
-              <h2 className="mb-2 font-semibold">Waiting to join</h2>
+              <h2 className="mb-2 text-lg font-bold text-night">Invited, not joined yet</h2>
               <ul className="divide-y divide-slate-100 text-sm">
                 {(invites ?? []).map((i) => (
                   <li key={i.id} className="flex justify-between py-2">

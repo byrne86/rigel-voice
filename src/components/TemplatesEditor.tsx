@@ -113,7 +113,7 @@ export default function TemplatesEditor({
                 />
                 <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={!!c.critical} onChange={(e) => setCriterion(i, { critical: e.target.checked })} />
-                  Critical: the call fails if this gets under half marks, whatever the total
+                  Must pass: under half marks here fails the call, whatever the total
                 </label>
               </div>
             ))}
@@ -144,15 +144,15 @@ export default function TemplatesEditor({
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
                 <h3 className="text-lg font-semibold">
-                  {t.name} <span className="badge ml-1 bg-emerald-100 text-emerald-800">active</span>
+                  {t.name}
                 </h3>
                 <p className="text-sm text-slate-500">
-                  {t.criteria.length} criteria · pass mark {t.pass_mark ?? 70}% · {st?.campaigns.length ? st.campaigns.join(", ") : "not used by a campaign yet"}
+                  {t.criteria.length} points to check, pass at {t.pass_mark ?? 70}%. {st?.campaigns.length ? `Used on ${st.campaigns.join(", ")}.` : "No campaign uses it yet."}
                 </p>
               </div>
               <dl className="grid grid-cols-4 gap-6 text-center">
                 {[
-                  ["Evaluations", st?.evaluations ?? 0],
+                  ["Calls marked", st?.evaluations ?? 0],
                   ["Agents", st?.agents ?? 0],
                   ["Pass rate", st?.pass === null || st?.pass === undefined ? "–" : `${Math.round(st.pass)}%`],
                   ["Avg score", st?.avg === null || st?.avg === undefined ? "–" : `${Math.round(st.avg)}%`],
@@ -165,14 +165,14 @@ export default function TemplatesEditor({
               </dl>
             </div>
             <details className="mt-3">
-              <summary className="cursor-pointer text-sm text-brand">Criteria</summary>
+              <summary className="cursor-pointer text-sm font-medium text-brand">See the points</summary>
               <ul className="mt-2 divide-y divide-slate-100 text-sm">
                 {t.criteria.map((c) => (
                   <li key={c.id} className="flex justify-between gap-4 py-2">
                     <div>
                       <div className="font-medium">
                         {c.name}
-                        {c.critical && <span className="ml-2 badge bg-red-100 text-red-800">critical</span>}
+                        {c.critical && <span className="ml-2 badge bg-red-50 text-red-800 ring-1 ring-red-200">must pass</span>}
                       </div>
                       <div className="text-slate-500">{c.description}</div>
                     </div>
