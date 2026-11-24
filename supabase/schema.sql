@@ -171,7 +171,7 @@ begin
     insert into public.scorecard_templates (org_id, name, description, criteria)
     values (v_org, 'Standard sales call', 'Default quality scorecard for outbound sales calls', '[
       {"id":"greeting","name":"Greeting and introduction","description":"Agent greets politely, gives their name and company, and states the reason for the call.","max_points":10},
-      {"id":"compliance","name":"Compliance","description":"Agent tells the customer the call is recorded and respects any request not to be contacted.","max_points":15},
+      {"id":"compliance","name":"Compliance","description":"Agent tells the customer the call is recorded and respects any request not to be contacted.","max_points":15,"critical":true},
       {"id":"discovery","name":"Needs discovery","description":"Agent asks relevant open questions and listens to understand the customer''s situation.","max_points":20},
       {"id":"product","name":"Product knowledge","description":"Agent explains the offer accurately and clearly, matched to the customer''s needs.","max_points":20},
       {"id":"objections","name":"Objection handling","description":"Agent acknowledges objections and responds calmly and credibly without pressure.","max_points":15},
@@ -346,3 +346,8 @@ create policy profiles_manage on public.profiles for update
 
 -- To let a customer start calling, run (with their organisation id):
 --   update public.organizations set calling_enabled = true where id = '...';
+alter table public.scorecard_templates add column if not exists pass_mark int not null default 70;
+alter table public.scorecards add column if not exists passed boolean;
+alter table public.scorecards add column if not exists objections jsonb not null default '[]'::jsonb;
+alter table public.scorecards add column if not exists agent_talk_ratio numeric;
+create index if not exists scorecards_org_created_idx on public.scorecards (org_id, created_at desc);

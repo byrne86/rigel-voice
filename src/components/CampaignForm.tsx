@@ -16,14 +16,16 @@ const VOICES = [
 export default function CampaignForm({
   campaign,
   templates,
+  defaultMode = "agent",
 }: {
+  defaultMode?: "agent" | "broadcast";
   campaign?: Campaign;
   templates: Pick<ScorecardTemplate, "id" | "name">[];
 }) {
   const router = useRouter();
   const [f, setF] = useState({
     name: campaign?.name ?? "",
-    mode: campaign?.mode ?? "agent",
+    mode: campaign?.mode ?? defaultMode,
     status: campaign?.status ?? "draft",
     caller_id: campaign?.caller_id ?? "",
     script: campaign?.script ?? "",

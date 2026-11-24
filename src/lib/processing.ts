@@ -67,17 +67,26 @@ export async function processCall(callId: string) {
     }
 
     await setStatus("scoring");
-    const scored = await scoreTranscript(text, template.criteria as Criterion[], {
+    const criteria = template.criteria as Criterion[];
+    const scored = await scoreTranscript(text, criteria, {
       campaign: call.campaigns?.name,
       script: call.campaigns?.script,
     });
 
+    // A call passes when it reaches the pass mark and no critical criterion got under half marks.
+    const passMark = Number(template.pass_mark ?? 70);
+    const criticalFail = scored.results.some((r) => {
+      const c = criteria.find((x) => x.id === r.criterion_id);
+      return c?.critical && r.score < r.max_points / 2;
+    });
     await db.from("scorecards").upsert(
       {
         call_id: callId,
         org_id: call.org_id,
         template_id: template.id,
         ...scored,
+        passed: scored.percent >= passMark && !criticalFail,
+        agent_talk_ratio: talkRatio(utterances),
       },
       { onConflict: "call_id" },
     );
@@ -140,7 +149,7 @@ async function scoreTranscript(
   const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
 
   const criteriaText = criteria
-    .map((c) => `- id "${c.id}" | ${c.name} | max ${c.max_points} points | ${c.description}`)
+    .map((c) => `- id "${c.id}" | ${c.name}${c.critical ? " (CRITICAL)" : ""} | max ${c.max_points} points | ${c.description}`)
     .join("\n");
 
   const response = await anthropic.messages.create({
@@ -183,6 +192,24 @@ async function scoreTranscript(
               items: { type: "string" },
               description: "Up to 3 specific, practical coaching tips for the agent.",
             },
+            objections: {
+              type: "array",
+              description:
+                "Every objection the customer raised. Empty if none.",
+              items: {
+                type: "object",
+                properties: {
+                  objection: {
+                    type: "string",
+                    description:
+                      "Short, general label of 3-7 words so similar objections group together, e.g. 'Too expensive', 'Already have a supplier', 'Call back next month'.",
+                  },
+                  category: { type: "string", enum: ["price", "timing", "need", "authority", "competitor", "trust", "other"] },
+                  resolved: { type: "boolean", description: "True if the agent handled it and the customer moved on positively." },
+                },
+                required: ["objection", "category", "resolved"],
+              },
+            },
             compliance_flags: {
               type: "array",
               items: { type: "string" },
@@ -190,7 +217,7 @@ async function scoreTranscript(
                 "Any compliance concerns, e.g. no recording notice, ignoring a do-not-call request, misleading claims. Empty if none.",
             },
           },
-          required: ["summary", "sentiment", "results", "coaching", "compliance_flags"],
+          required: ["summary", "sentiment", "results", "coaching", "objections", "compliance_flags"],
         },
       },
     ],
@@ -215,6 +242,7 @@ async function scoreTranscript(
     sentiment: string;
     results: { criterion_id: string; score: number; evidence: string; comment: string }[];
     coaching: string[];
+    objections: { objection: string; category: string; resolved: boolean }[];
     compliance_flags: string[];
   };
 
@@ -242,9 +270,26 @@ async function scoreTranscript(
     sentiment: out.sentiment ?? "neutral",
     results,
     coaching: out.coaching ?? [],
+    objections: (out.objections ?? []).slice(0, 20).map((o) => ({
+      objection: String(o.objection ?? "").slice(0, 120),
+      category: String(o.category ?? "other"),
+      resolved: !!o.resolved,
+    })),
     compliance_flags: out.compliance_flags ?? [],
     model,
   };
+}
+
+/** Share of speaking time that was the agent (0-1), from the two-channel transcript. */
+function talkRatio(utterances: Utterance[]) {
+  let agent = 0;
+  let customer = 0;
+  for (const u of utterances) {
+    const d = Math.max(0, u.end - u.start);
+    if (u.speaker === "Agent") agent += d;
+    else if (u.speaker === "Customer") customer += d;
+  }
+  return agent + customer > 0 ? Math.round((agent / (agent + customer)) * 1000) / 1000 : null;
 }
 
 function stamp(seconds: number) {

@@ -14,6 +14,8 @@ export interface Criterion {
   name: string;
   description: string;
   max_points: number;
+  /** Failing this criterion (under half marks) fails the whole call. */
+  critical?: boolean;
 }
 
 export interface ScorecardTemplate {
@@ -21,7 +23,16 @@ export interface ScorecardTemplate {
   name: string;
   description: string | null;
   criteria: Criterion[];
+  pass_mark?: number;
 }
+
+export interface Objection {
+  objection: string;
+  category: string;
+  resolved: boolean;
+}
+
+export const OBJECTION_CATEGORIES = ["price", "timing", "need", "authority", "competitor", "trust", "other"] as const;
 
 export interface Campaign {
   id: string;

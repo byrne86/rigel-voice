@@ -9,6 +9,7 @@ const blank = (): ScorecardTemplate => ({
   id: "",
   name: "",
   description: "",
+  pass_mark: 70,
   criteria: [{ id: crypto.randomUUID().slice(0, 8), name: "", description: "", max_points: 10 }],
 });
 
@@ -31,7 +32,8 @@ export default function TemplatesEditor({ templates, canEdit }: { templates: Sco
     setBusy(true);
     setError(null);
     const supabase = createClient();
-    const row = { name: editing.name.trim(), description: editing.description || null, criteria };
+    const passMark = Math.max(1, Math.min(100, Math.round(Number(editing.pass_mark ?? 70))));
+    const row = { name: editing.name.trim(), description: editing.description || null, criteria, pass_mark: passMark };
     const { error } = editing.id
       ? await supabase.from("scorecard_templates").update(row).eq("id", editing.id)
       : await supabase.from("scorecard_templates").insert(row);
@@ -61,6 +63,19 @@ export default function TemplatesEditor({ templates, canEdit }: { templates: Sco
             <label className="label">Description</label>
             <input className="input" value={editing.description ?? ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
           </div>
+          <div>
+            <label className="label" htmlFor="pass-mark">Pass mark (%)</label>
+            <input
+              id="pass-mark"
+              className="input w-28"
+              type="number"
+              min={1}
+              max={100}
+              value={editing.pass_mark ?? 70}
+              onChange={(e) => setEditing({ ...editing, pass_mark: Number(e.target.value) })}
+            />
+            <p className="mt-1 text-xs text-slate-500">A call passes at this score, unless it fails a critical criterion.</p>
+          </div>
         </div>
         <div>
           <div className="label">Criteria ({total} points in total)</div>
@@ -78,6 +93,10 @@ export default function TemplatesEditor({ templates, canEdit }: { templates: Sco
                   value={c.description}
                   onChange={(e) => setCriterion(i, { description: e.target.value })}
                 />
+                <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={!!c.critical} onChange={(e) => setCriterion(i, { critical: e.target.checked })} />
+                  Critical: the call fails if this gets under half marks, whatever the total
+                </label>
               </div>
             ))}
           </div>
@@ -108,6 +127,7 @@ export default function TemplatesEditor({ templates, canEdit }: { templates: Sco
               <h3 className="font-semibold">{t.name}</h3>
               {t.description && <p className="text-sm text-slate-500">{t.description}</p>}
             </div>
+            <span className="text-xs text-slate-500">Pass mark {t.pass_mark ?? 70}%</span>
             {canEdit && (
               <div className="flex gap-2">
                 <button className="btn-secondary" onClick={() => setEditing(t)}>Edit</button>
@@ -119,7 +139,10 @@ export default function TemplatesEditor({ templates, canEdit }: { templates: Sco
             {t.criteria.map((c) => (
               <li key={c.id} className="flex justify-between gap-4 py-2">
                 <div>
-                  <div className="font-medium">{c.name}</div>
+                  <div className="font-medium">
+                    {c.name}
+                    {c.critical && <span className="ml-2 badge bg-red-100 text-red-800">critical</span>}
+                  </div>
                   <div className="text-slate-500">{c.description}</div>
                 </div>
                 <div className="shrink-0 font-semibold">{c.max_points} pts</div>
